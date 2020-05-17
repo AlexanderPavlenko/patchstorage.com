@@ -1,0 +1,26 @@
+{
+	"uuid": "ae6ca24e-9167-4404-a043-e22a3d011fec",
+	"category": "Mozaic",
+	"templates": [
+		{
+			"name": "Mozaic",
+			"fileExtension": "moz",
+			"snippet": "@Description\n${1:Enter script description here}\n@End\n\n@OnLoad\n  $0\n@End"
+		},
+		{
+		"name": "Mozaic (16 Pads)",
+			"fileExtension": "moz",
+			"snippet": "@Description\n${1:Enter script description here}\n@End\n\n@OnLoad\n  debug = YES\n\n  SetShortName {${2:name}}\n  ShowLayout 2\n  LabelPads {${3:Pads Label}}\n  LabelKnobs {${4:Knobs Label}}\n  $0\n@End\n\n@OnPadDown\n  _pad = LastPad\n  if debug\n    Log {@OnPadDown },_pad\n  endif\n@End\n\n@OnKnobChange\n  _knob = LastKnob\n  _val = GetKnobValue _knob\n  if debug\n    Log  {@OnKnobChange },_knob,{ = },_val\n  endif\n@End\n"
+		},
+		{
+		"name": "Mozaic (22 Knobs)",
+			"fileExtension": "moz",
+			"snippet": "@Description\n${1:Enter script description here}\n@End\n\n@OnLoad\n  debug = YES\n\n  SetShortName {${2:name}}\n  ShowLayout 1\n  LabelKnobs {${3:Knobs Label}}\n  $0\n@End\n\n@OnKnobChange\n  _knob = LastKnob\n  _val = GetKnobValue _knob\n  if debug\n    Log  {@OnKnobChange },_knob,{ = },_val\n  endif\n@End\n"
+		},
+		{
+		"name": "Mozaic (4 Pads, 10 Knobs,XY)",
+			"fileExtension": "moz",
+			"snippet": "@Description\n${1:Enter script description here}\n@End\n\n@OnLoad\n  debug = YES\n\n  SetShortName {${2:name}}\n  ShowLayout 0\n  LabelPads {${3:Pads Label}}\n  LabelKnobs {${4:Knobs Label}}\n  LabelXY {${5:XY Label}}\n  $0\n@End\n\n@OnPadDown\n  _pad = LastPad\n  if debug\n    Log {@OnPadDown },_pad\n  endif\n@End\n\n@OnKnobChange\n  _knob = LastKnob\n  _val  = GetKnobValue _knob\n  if debug\n    Log  {@OnKnobChange },_knob,{ = },_val\n  endif\n@End\n\n@OnXYChange\n  _x = GetXValue\n  _y = GetYValue\n  if debug\n    Log {@OnXYChange },_x,{  },_y\n  endif\n@End"
+		}
+	]
+}
