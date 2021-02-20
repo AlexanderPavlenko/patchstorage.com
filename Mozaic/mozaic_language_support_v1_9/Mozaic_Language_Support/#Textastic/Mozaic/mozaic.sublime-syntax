@@ -1,0 +1,2090 @@
+%YAML 1.2
+---
+# See http://www.sublimetext.com/docs/3/syntax.html
+name: Mozaic
+file_extensions:
+  - moz
+scope: source.mozaic
+
+# A syntax-highlighting and full syntax-validator for the
+#
+# ╔╦╗┌─┐┌─┐┌─┐┬┌─┐  ╔═╗┌─┐┬─┐┬┌─┐┌┬┐┬┌┐┌┌─┐  ╦  ┌─┐┌┐┌┌─┐┬ ┬┌─┐┌─┐┌─┐
+# ║║║│ │┌─┘├─┤││    ╚═╗│  ├┬┘│├─┘ │ │││││ ┬  ║  ├─┤││││ ┬│ │├─┤│ ┬├┤ 
+# ╩ ╩└─┘└─┘┴ ┴┴└─┘  ╚═╝└─┘┴└─┴┴   ┴ ┴┘└┘└─┘  ╩═╝┴ ┴┘└┘└─┘└─┘┴ ┴└─┘└─┘
+#
+# by -ki    ( https://forum.audiob.us/profile/_ki )
+# v1.9 12.07.2020  Added Inc and Dec as functions with 1 param and 1 optional
+# v1.8 06.07.2020  @End completion, Fix: @End in @Description only recognized at line start
+# V1.7 28.01.2020  Added TRUE and FALSE constants
+# V1.6 31.10.2019  Added suport for ColorPad and SystemTime
+# V1.5 11.10.2019  Fix: Comments with boxdrawing chars were shown italic under Linux
+# V1.4 10.10.2019  Feature: start typing and / or in expression uses 'depricated' highlight
+# V1.3 27.09.2019  Added special contexts for context dependant code completion
+# V1.2 25.09.2019  Bugfix: expressions allowed 'and','or' as variable names
+# V1.1 24.09.2019  Bugfix: FOR lvalue allowed controlflow keywords and verbal operators
+# V1.0 20.09.2019  Started _SYNTAX_ERROR scopes for Sublime3 to state the type of error
+# V0.9 18.09.2019  Restructuring
+# V0.8 12.09.2019  Added loopback regex for ending keywords to recover after errors
+# V0.7 10.09.2019  Fixed Textastic flashing during editing by new strategy
+# V0.6 09.09.2019  Added '^' state to signal previous found errors
+# V0.5 07.09.2019  Refactored context naming, function and command parameter checks
+# V0.4 30.08.2019  Complete rewrite to parse expression and all language elements
+# V0.3 28.08.2019  More syntax checks
+# V0.2 22.08.2019  First parser for assignments and control structures
+# V0.1 20.08.2019  Syntax highlighting for all Mozaic language elements
+
+variables:
+  _non_unary_term: '[a-zA-Z0-9\(_]'
+  _term:           '[a-zA-Z0-9\(_-]'
+
+  is_term:  '(?={{_term}})'
+  not_term: '(?!{{_term}})'
+  is_whitespace_term:  '(?=\s*{{_term}})'
+  not_whitespace_term: '(?!\s*{{_term}})'
+
+  is_non_unary_term: '(?={{_non_unary_term}})'
+
+  empty_upto_eol: '(?=\s*(//|$))'
+  not_empty_upto_eol: '(?!\s*(//|$))'
+
+  is_comment:  '(?=//)'
+  not_comment: '(!=//)'
+  is_whitespace_comment: '(?=\s*//)'
+
+  not_boxdrawing_char: '[^┌┐└┘│├┤─┬┴┼╔╗╚╝║╠╣═╦╩╬o]'
+
+  is_eol:  '(?=\s*$)'
+  not_eol: '(?!\S*$)'
+
+  is_end_term:            '(?=[\),\]])'
+  is_whitespace_end_term: '(?=\s*[\),\]])'
+  is_separator:           '(?=[\),])'
+
+  whitespace:             '[ |\t]'
+  whitespace_comma:       '\s*,'
+  not_whitespace_op: '(?!\s*((?i)(\+|\-|\*|/|=|<>|>=|<=|<|>|\||\&|\^|\%|and|or|not)(?-i)))'
+  not_op:            '(?!((?i)(\+|\-|\*|/|=|<>|>=|<=|<|>|\||\&|\^|\%|and|or|not)(?-i)))'
+
+  _reserved_names:    'if|else|elseif|endif|for|to|endfor|while|endwhile|until|repeat'
+  _reserved_end_cmds: 'endif|else|elseif|endfor|until|endwhile'
+
+
+  # Commands, grouped by number and type of parameters  
+  #    <num>p    number of expression params
+  #    <num>og   number of optional expression params in a group
+  #    <num>o    number of optional expression params
+  #    <num>s    number of strings only
+  #    <num>soe  number of strings or expression
+  #        _f    commands  also beeing functions
+  commands_0p:      'StartTimer|StopTimer|ResetTimer|Exit|FlashUserLed|SendSysexThru|LogTime'  
+  commands_1p:      'ReceiveSysex|SetMetroPPQN|SetMetroSwing|SetTimerInterval|SetRootNote|ShowLayout|FlashPad'  
+  commands_2p:      'SetAUParameter|ConfigureMPE|SetKnobValue|LatchPad|ColorPad|SetXYValues'
+  commands_3p:      'SetNoteState'
+  commands_4p:      '__no_command___'
+  commands_5p:      'SetupLFO'
+  commands_Np:      'CustomScale'
+  commands_0p_1o:   'SendMIDIThru|ResetNoteStates'
+  commands_1p_1o:   'SendMIDIThruOnCh|ResetLfo'
+  commands_1p_1o_f: 'Inc|Dec'
+  commands_2p_1o:   'SendMIDIPitchbend|SendMIDIProgramChange|FillArray|CopyArray'
+  commands_2p_2o:   'SendMIDIOut'
+  commands_2p_2og:  'SendSysex'
+  commands_3p_1o:   'SendMIDINoteOn|SendMIDINoteOff|SendMIDICC|SendMIDIBankSelect'
+  commands_0p_1soe: 'PresetScale'
+  commands_1p_1s:   'SetLFOType'
+  commands_0p_Nsoe: 'Log|LabelPads|LabelKnobs|LabelXY|SetShortName'
+  commands_1p_Nsoe: 'LabelPad|LabelKnob'
+
+  _cmds_0_N_list: '{{commands_0p}}|{{commands_1p}}|{{commands_2p}}|{{commands_3p}}|{{commands_4p}}|{{commands_5p}}|{{commands_Np}}' 
+  _cmds_opt_list: '{{commands_0p_1o}}|{{commands_1p_1o}}|{{commands_2p_1o}}|{{commands_3p_1o}}|{{commands_2p_2og}}|{{commands_2p_2o}}'
+  _cmds_and_funcs_list: '{{commands_1p_1o_f}}'
+  _cmds_str_list: '{{commands_0p_1soe}}|{{commands_1p_1s}}|{{commands_0p_Nsoe}}|{{commands_1p_Nsoe}}'
+
+  # List of all commands
+  _commands_pure_list: '{{_cmds_0_N_list}}|{{_cmds_opt_list}}|{{_cmds_str_list}}'
+  _commands_list: '{{_commands_pure_list}}|{{_cmds_and_funcs_list}}'
+  
+  # Functions, grouped by number and type of parameters  
+  #    <num>p  number of params
+  #    <num>o  number of optionals
+  #        _c  functions also beeing commands
+  _funcs_0p_a:  'MIDIChannel|MIDICommand|MIDINote|MIDIVelocity|MIDIByte1|MIDIByte2|MIDIByte3|MIDISustainPedalDown'
+  _funcs_0p_b:  'SysexSize|HostTempo|HostBar|HostBeat|HostBeatsPerMeasure|HostRunning|CurrentMetroPulse'
+  _funcs_0p_c:  'LastAUParameter|QuarterNote|GetXValue|GetYValue|LastKnob|LastPad|LastPadVelocity'
+  _funcs_0p_d:  'MotionPitch|MotionYaw|MotionRoll|ShiftPressed|SystemTime|NO|YES|TRUE|FALSE'
+  _funcs_1p_a:  'GetAUParameter|GetLFOValue|InScale|ScaleQuantize|GetKnobValue|PadState|Unassigned'
+  _funcs_1p_b:  'Round|RoundUp|RoundDown|Sin|Cos|Tan|Tanh|Exp|Sqrt|Abs|Logn|Log10'
+  
+  functions_0p: '{{_funcs_0p_a}}|{{_funcs_0p_b}}|{{_funcs_0p_c}}|{{_funcs_0p_d}}'
+  functions_1p: '{{_funcs_1p_a}}|{{_funcs_1p_b}}'
+  functions_2p: 'GetNoteState|Pow|Div|Random'
+  functions_3p: 'Clip'
+  functions_4p: 'GetXYMorphValue'
+  functions_5p: 'TranslateScale'
+  functions_1p_1o_c: 'Inc|Dec'  
+  functions_2p_2o: 'TranslateCurve'
+
+  # Functions returning strings, allowed in Log
+  string_funcs_0p:    'RootNoteName'
+  string_funcs_1o:    'ScaleName'
+  string_funcs_1p_1o: 'NoteName'
+  _string_functions_list: '{{string_funcs_0p}}|{{string_funcs_1o}}|{{string_funcs_1p_1o}}'
+
+  _funcs_0_5_list:   '{{functions_0p}}|{{functions_1p}}|{{functions_2p}}|{{functions_3p}}|{{functions_4p}}|{{functions_5p}}'
+
+  # List of all functions
+  _functions_pure_list: '{{_funcs_0_5_list}}|{{functions_2p_2o}}'
+  _functions_list: '{{_functions_pure_list}}|{{functions_1p_1o_c}}'
+
+  # Event names
+  _events_a: 'OnMidiInput|OnMidiNote|OnMidiNoteOn|OnMidiNoteOff|OnMidiCC|OnSysex|OnPedalDown|OnPedalUp'
+  _events_b: 'OnHostStart|OnHostStop|OnNewBar|OnNewBeat|OnMetroPulse|OnTimer|OnLoad|Description'
+  _events_c: 'OnPadDown|OnPadUp|OnShiftDown|OnShiftUp|OnKnobChange|OnXYChange|OnAuParameter'
+
+  # List of all events
+  _events_list: '{{_events_a}}|{{_events_b}}|{{_events_c}}'
+
+  # List of string functions independent of capitalization
+  _str_func: '((?i)({{_string_functions_list}})(?-i))'
+  _string: '({|{{_str_func}}|((\(\s*)+{{_str_func}}))'
+
+  # List of keywords and verbal operators
+  _keywords_list:       'if|elseif|else|endif|for|to|endfor|while|endwhile|repeat|until|and|or|not'
+
+
+  is_string:            '(?={{_string}})'
+  is_whitespace_string: '(?=\s*{{_string}})'
+
+  is_stringfunc:        '(?=((?i){{_string_functions_list}}(?-i)))'
+  is_nested_stringfunc: '(?=\(\s*((?i)({{_string_functions_list})(?-i)))'
+
+  in_pure_commands_list: '\b((?i){{_commands_pure_list}}(?-i))\b'
+  in_functions_list:     '\b((?i){{_functions_list}}(?-i))\b'
+  in_string_funcs_list:  '\b((?i){{_string_functions_list}}(?-i))\b'
+  in_reserved_names:     '\b((?i){{_reserved_names}}(?-i))\b'
+  in_lvalue_excludes:    '\b((?i){{_events_list}}|{{_functions_list}}|{{_commands_list}}|{{_string_functions_list}}|{{_keywords_list}}(?-i))\b'
+  in_pure_lvalue_excludes:    '\b((?i){{_events_list}}|{{_functions_pure_list}}|{{_commands_pure_list}}|{{_string_functions_list}}|{{_keywords_list}}(?-i))\b'
+  is_inc_dec_assignment: '\b((?i){{functions_1p_1o_c}}(?-i))(?=(\s*=))' 
+#  in_var_excludes:       '\b((?i){{_events_list}}|{{_commands_list}}|{{_string_functions_list}}(?-i))\b'
+  in_var_excludes:       '\b((?i){{_events_list}}|{{_commands_list}}|{{_keywords_list}}(?-i))\b'
+  in_mozaic_events:      '@((?i){{_events_list}}(?-i))\b'
+  in_mozaic_uncallable_events:  '@((?i)OnLoad|Description(?-i))\b'
+
+  # OnLoad,Description is also in valid event list to get colorization right
+
+  # Reserved end cmds durinc control structures
+  bailout_during_while:  '(\b((?i)endif|else|elseif|endfor|until(?-i))\b)'
+  bailout_during_repeat: '(\b((?i)endif|else|elseif|endfor|endwhile(?-i))\b)'
+  bailout_during_for:    '(\b((?i)endif|else|elseif|endwhile|until(?-i))\b)'
+  bailout_during_if:     '(\b((?i)endfor|endwhile|until(?-i))\b)'
+  in_reserved_end_cmds:  '\b((?i)endif|else|elseif|endfor|until|endwhile(?-i))\b'
+  in_illegal_cmds:       '\b((?i)endif|else|elseif|endfor|until|endwhile|to|no|yes|not|and|or(?-i))\b'
+
+  is_whitespace_and_or:                      '\s*(?i)\b(and|or)\b(?-i)'
+  is_whitespace_start_and_or_not_empty_eol:  '(?=\s*(?i)\b(an|o)(?-i)(?!\s*(//|$)))'
+  is_whitespace_start_and_or:                '(?!^)(?=\s*(?i)\b(a|an|o)\b(?-i))'
+  is_start_and_or:                           '(?i)\b(a|an|o)\b(?-i)'
+
+  # Control-Flow errors highlight some keywords and step right behind them
+  # This can be picked up by calling context by a using lookback regex.
+  #
+  # Unfortunately the library used does not allow for regex insided lookbacks.
+  # 
+  # The parser now tests if any char is infront of the keyword by repeating
+  # the code.
+
+  sol_end_keyword:  '(?i)^@End\b(?-i)'
+  end_keyword:      '(?i)@End\b(?-i)'
+  until_keyword:    '\b(?i)until(?-i)\b'
+  endwhile_keyword: '\b(?i)endwhile(?-i)\b'
+  endfor_keyword:   '\b(?i)endfor(?-i)\b'
+  endif_keyword:    '\b(?i)endif(?-i)\b'
+
+  was_end_keyword:      '(?<!\S......{{end_keyword}})(?<!\S.....{{end_keyword}})(?<!\S....{{end_keyword}})(?<!\S...{{end_keyword}})(?<!\S..{{end_keyword}})(?<!\S.{{end_keyword}})(?<!\S{{end_keyword}})(?<={{end_keyword}})'
+  was_until_keyword:    '(?<!\S......{{until_keyword}})(?<!\S.....{{until_keyword}})(?<!\S....{{until_keyword}})(?<!\S...{{until_keyword}})(?<!\S..{{until_keyword}})(?<!\S.{{until_keyword}})(?<!\S{{until_keyword}})(?<={{until_keyword}})'
+  was_endwhile_keyword: '(?<!\S......{{endwhile_keyword}})(?<!\S.....{{endwhile_keyword}})(?<!\S....{{endwhile_keyword}})(?<!\S...{{endwhile_keyword}})(?<!\S..{{endwhile_keyword}})(?<!\S.{{endwhile_keyword}})(?<!\S{{endwhile_keyword}})(?<={{endwhile_keyword}})'
+  was_endfor_keyword:   '(?<!\S......{{endfor_keyword}})(?<!\S.....{{endfor_keyword}})(?<!\S....{{endfor_keyword}})(?<!\S...{{endfor_keyword}})(?<!\S..{{endfor_keyword}})(?<!\S.{{endfor_keyword}})(?<!\S{{endfor_keyword}})(?<={{endfor_keyword}})'
+  was_endif_keyword:    '(?<!\S......{{endif_keyword}})(?<!\S.....{{endif_keyword}})(?<!\S....{{endif_keyword}})(?<!\S...{{endif_keyword}})(?<!\S..{{endif_keyword}})(?<!\S.{{endif_keyword}})(?<!\S{{endif_keyword}})(?<={{endif_keyword}})'
+
+contexts:
+
+  # ------------------------------------------------------------
+  # ╔╦╗┌─┐┌─┐┌─┐┬┌─┐  ╔╗ ┬ ┬┬┬  ┌┬┐┬┌┐┌  ╔═╗┌─┐┌┬┐┌┬┐┌─┐┌┐┌┌┬┐┌─┐
+  # ║║║│ │┌─┘├─┤││    ╠╩╗│ │││   ││││││  ║  │ │││││││├─┤│││ ││└─┐
+  # ╩ ╩└─┘└─┘┴ ┴┴└─┘  ╚═╝└─┘┴┴─┘─┴┘┴┘└┘  ╚═╝└─┘┴ ┴┴ ┴┴ ┴┘└┘─┴┘└─┘
+
+  mozaic-buildin-commands:
+    - match: '\b((?i){{commands_0p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: util-finalize-check-empty-line-and-pop
+
+    - match: '\b((?i){{commands_1p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-1
+
+    - match: '\b((?i){{commands_2p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-2
+
+    - match: '\b((?i){{commands_3p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-3
+
+    - match: '\b((?i){{commands_4p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-4
+
+    - match: '\b((?i){{commands_5p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-5
+
+    - match: '\b((?i){{commands_0p_1soe}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-1str-or-expression
+
+    - match: '\b((?i){{commands_1p_1s}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-1-1str
+
+    - match: '\b((?i){{commands_1p_Nsoe}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-1-nstr-or-expression
+
+    - match: '\b((?i){{commands_0p_1o}}(?-i))\b'
+      scope: support.function mozaic.color
+      push:  command-param-1opt
+
+    - match: '\b((?i){{commands_1p_1o}}|{{commands_1p_1o_f}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-1-plus-1opt
+
+    - match: '\b((?i){{commands_2p_1o}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-2-plus-1opt
+
+    - match: '\b((?i){{commands_3p_1o}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-3-plus-1opt
+
+    - match: '\b((?i){{commands_2p_2og}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-2-plus-2opt-group
+
+    - match: '\b((?i){{commands_2p_2o}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-param-2-plus-2opt
+
+    - match: '\b((?i){{commands_Np}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-loop-expression-start
+
+    - match: '\b((?i){{commands_0p_Nsoe}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: command-loop-string-or-expression-start
+
+  # ╔═╗┌─┐┌┬┐┌┬┐┌─┐┌┐┌┌┬┐  ╦ ╦┌─┐┌┐┌┌┬┐┬  ┌─┐┬─┐┌─┐
+  # ║  │ │││││││├─┤│││ ││  ╠═╣├─┤│││ │││  ├┤ ├┬┘└─┐
+  # ╚═╝└─┘┴ ┴┴ ┴┴ ┴┘└┘─┴┘  ╩ ╩┴ ┴┘└┘─┴┘┴─┘└─┘┴└─└─┘
+
+  # -------------------------------------------
+  # COMMANDS Chain for 5-1 params
+
+  command-param-5:
+      - meta_scope: context.command-param-5
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-4, expect-comma, expect-expression]
+
+  command-param-4:
+      - meta_scope: context.command-param-4
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-3, expect-comma, expect-expression]
+
+  command-param-3:
+      - meta_scope: context.command-param-3
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-2, expect-comma, expect-expression]
+
+  command-param-2:
+      - meta_scope: context.command-param-2
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-1, expect-comma, expect-expression] 
+
+  command-param-1:
+      - meta_scope: context.command-param-1
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ util-finalize-check-empty-line-and-pop, expect-expression]
+
+
+  # -------------------------------------------
+  # COMMANDS Chain for 1 + exactly 1str params
+
+  command-param-1-1str:
+      - meta_scope: context.command-param-1-1str
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-1str, expect-comma, expect-expression]
+
+  command-param-1str:
+      - meta_scope: context.command-param-1str
+      - match: '{{is_whitespace_string}}'
+        set: [ util-finalize-check-empty-line-and-pop, expect-string]
+      - match: ''
+        set: syntax-error-finalize-string-expected
+
+  # -------------------------------------------
+  # COMMANDS Chain for 1str or expression params
+
+  command-param-1str-or-expression:
+      - meta_scope: context.command-param-1str-or-expression
+      - match: '{{is_whitespace_term}}'
+        set: [ util-finalize-check-empty-line-and-pop, expect-expression]
+      - match: '{{is_whitespace_string}}'
+        set: [ util-finalize-check-empty-line-and-pop, expect-string]
+      - match: ''
+        set: syntax-error-finalize-parameter-expression-expected
+
+  # -------------------------------------------
+  # COMMANDS Chain for 1 + n str or expression params
+
+  command-param-1-nstr-or-expression:
+      - meta_scope: context.command-param-1-nstr-or-expression
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-loop-string-or-expression-at-least-one, expect-comma, expect-expression]
+#      - match: ''
+#        set: error-finalize-flag-next-and-pop
+
+  # -------------------------------------------
+  # COMMANDS Chain for 3 + 1 opt params
+
+  command-param-3-plus-1opt:
+      - meta_scope: context.command-param-3-plus-1opt
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-2-plus-1opt, expect-comma, expect-expression]
+
+  command-param-2-plus-1opt:
+      - meta_scope: context.command-param-2-plus-1opt
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-1-plus-1opt, expect-comma, expect-expression]
+
+  command-param-1-plus-1opt:
+      - meta_scope: context.command-param-1-plus-1opt
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-0-plus-1opt, expect-expression]
+
+  command-param-0-plus-1opt:
+      - meta_scope: context.command-param-0-plus-1opt
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color 
+        set: [ util-finalize-check-empty-line-and-pop, expect-expression]
+      - match: ''
+        set: util-finalize-check-empty-line-and-pop
+
+  # -------------------------------------------
+  # COMMANDS Chain for 0 + 1 opt param
+
+  command-param-1opt:
+      - meta_scope: context.mozaic-command-0_1opt-params
+      - match: '{{is_whitespace_term}}'
+        set: [ util-finalize-check-empty-line-and-pop, expect-expression]
+      - match: ''
+        set: util-finalize-check-empty-line-and-pop
+
+  # -------------------------------------------
+  # COMMANDS Chain for 2 + 2 opt param in a group
+
+  command-param-2-plus-2opt-group:
+      - meta_scope: context.command-param-2-plus-2opt-group
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-1-plus-2opt-group, expect-comma, expect-expression]
+
+  command-param-1-plus-2opt-group:
+      - meta_scope: context.command-param-1-plus-2opt-group
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-0-plus-2opt-group, expect-expression]
+
+  command-param-0-plus-2opt-group:
+      - meta_scope: context.command-param-0-plus-2opt-group
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color    
+        set: [ command-param-0-plus-2opt-group-end, expect-expression]
+      - match: ''
+        set: util-finalize-check-empty-line-and-pop
+
+  command-param-0-plus-2opt-group-end:
+      - meta_scope: context.command-param-0-plus-2opt-group-end
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color     
+        set: [ util-finalize-check-empty-line-and-pop, expect-expression]
+      - match: ''
+        set: syntax-error-finalize-parameter-expression-expected
+
+
+  # -------------------------------------------
+  # COMMANDS Chain for 2 + 2 opt param (1 or 2 opts)
+
+  command-param-2-plus-2opt:
+      - meta_scope: context.command-param-2-plus-2opt
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-1-plus-2opt, expect-comma, expect-expression]
+#      - match: ''
+#        set: error-finalize-flag-next-and-pop
+
+  command-param-1-plus-2opt:
+      - meta_scope: context.command-param-1-plus-2opt
+      - include: util-finalize-step-upto-parameter-term
+      - match: '{{is_term}}'
+        set: [ command-param-0-plus-2opt, expect-expression]
+#      - match: ''
+#        set: error-finalize-flag-next-and-pop
+
+  command-param-0-plus-2opt:
+      - meta_scope: context.command-param-0-plus-2opt
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color     
+        set: [ command-param-0-plus-2opt-end, expect-expression]
+      - match: ''
+        set: util-finalize-check-empty-line-and-pop
+
+  command-param-0-plus-2opt-end:
+      - meta_scope: context.command-param-0-plus-2opt-end
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color  
+        set: [ util-finalize-check-empty-line-and-pop, expect-expression]
+      - match: ''
+        set: util-finalize-check-empty-line-and-pop
+
+  # -------------------------------------------
+  # COMMANDS Chain for n opt param
+  
+  command-loop-expression-start:
+      - meta_scope: context.command-loop-expression-start
+      - match: '{{not_whitespace_term}}'
+        set: util-finalize-check-empty-line-and-pop  
+      - include: util-finalize-step-upto-term
+      - match: '{{is_term}}'
+        set: [ command-loop-expression, expect-expression]
+
+  command-loop-expression:
+      - meta_scope: context.command-loop-expression
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color 
+        set: [ command-loop-expression, expect-expression]
+      - match: ''  
+        set: util-finalize-check-empty-line-and-pop  
+
+  # -------------------------------------------
+  # COMMANDS Chain for n > 0 str param
+
+  command-loop-string-or-expression-at-least-one:
+      - meta_scope: mozaic.stringexpression context.command-loop-string-or-expression-at-least-one
+#      - include: util-step-upto-string-or-term
+      - match: '{{is_whitespace_string}}'
+        set: [ command-loop-string-or-expression, string-parameter]
+      - match: '{{is_whitespace_term}}'
+        set: [ command-loop-string-or-expression, expect-expression]
+      - match: ''
+        set: syntax-error-finalize-parameter-expression-or-string-expected #error-finalize-flag-next-and-pop 
+
+  # -------------------------------------------
+  # COMMANDS Chain for n >= 0 str param
+
+  command-loop-string-or-expression-start:
+      - meta_scope: mozaic.stringexpression context.mozaic-command-n-str-params
+#     - include: util-step-upto-string-or-term
+      - match: '{{is_whitespace_string}}'
+        set: [ command-loop-string-or-expression, string-parameter]
+      - match: '{{not_whitespace_term}}'
+        set: util-finalize-check-empty-line-and-pop  
+      - match: '{{is_whitespace_term}}'
+        set: [ command-loop-string-or-expression, expect-string-or-expression]
+
+  command-loop-string-or-expression:
+      - meta_scope: mozaic.stringexpression context.command-loop-string-or-expression
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color 
+        set: [ command-loop-string-or-expression, expect-string-or-expression]
+      - match: ''  
+        set: util-finalize-check-empty-line-and-pop  
+
+
+  # ------------------------------------------------------------
+  # ╔╦╗┌─┐┌─┐┌─┐┬┌─┐  ╔╗ ┬ ┬┬┬  ┌┬┐┬┌┐┌  ╔═╗┬ ┬┌┐┌┌─┐┌┬┐┬┌─┐┌┐┌┌─┐
+  # ║║║│ │┌─┘├─┤││    ╠╩╗│ │││   ││││││  ╠╣ │ │││││   │ ││ ││││└─┐
+  # ╩ ╩└─┘└─┘┴ ┴┴└─┘  ╚═╝└─┘┴┴─┘─┴┘┴┘└┘  ╚  └─┘┘└┘└─┘ ┴ ┴└─┘┘└┘└─┘
+
+  mozaic-buildin-functions:
+    - match: '\b((?i){{functions_0p}}(?-i))\b'
+      scope: support.function mozaic.color
+      set:  term-continue
+
+    - match: '\b((?i){{functions_1p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: function-param-1
+
+    - match: '\b((?i){{functions_2p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: function-param-2
+
+    - match: '\b((?i){{functions_3p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: function-param-3
+
+    - match: '\b((?i){{functions_4p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: function-param-4
+
+    - match: '\b((?i){{functions_5p}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: function-param-5
+
+    - match: '\b((?i){{functions_1p_1o_c}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: function-param-1-plus-1opt
+  
+    - match: '\b((?i){{functions_2p_2o}}(?-i))\b'
+      scope: support.function mozaic.color
+      push: function-param-2-plus-2opt
+
+  # ╔═╗┬ ┬┌┐┌┌─┐┌┬┐┬┌─┐┌┐┌  ╦ ╦┌─┐┌┐┌┌┬┐┬  ┌─┐┬─┐┌─┐
+  # ╠╣ │ │││││   │ ││ ││││  ╠═╣├─┤│││ │││  ├┤ ├┬┘└─┐
+  # ╚  └─┘┘└┘└─┘ ┴ ┴└─┘┘└┘  ╩ ╩┴ ┴┘└┘─┴┘┴─┘└─┘┴└─└─┘
+
+  # -------------------------------------------
+  # FUNCTIONS Chain for 5-1 params
+
+  function-param-5:
+      - meta_scope: context.function-param-5
+      - include: util-step-upto-term
+      - match: '{{is_whitespace_term}}'
+        set: [ function-param-4, expect-comma, expect-expression]
+
+  function-param-4:
+      - meta_scope: context.function-param-4
+      - include: util-step-upto-term
+      - match: '{{is_whitespace_term}}'
+        set: [ function-param-3, expect-comma, expect-expression]
+
+  function-param-3:
+      - meta_scope: context.function-param-3
+      - include: util-step-upto-term
+      - match: '{{is_whitespace_term}}'
+        set: [ function-param-2, expect-comma, expect-expression]
+
+  function-param-2:
+      - meta_scope: context.function-param-2
+      - include: util-step-upto-term
+      - match: '{{is_whitespace_term}}'
+        set: [ function-param-1, expect-comma, expect-expression]
+
+  function-param-1:
+      - meta_scope: context.function-param-1
+      - include: util-step-upto-term
+      - match: '{{is_whitespace_term}}'
+        set: [ term-continue, expect-expression]
+
+  # -------------------------------------------
+  # FUNCTIONS Chain for 1 + 1opt param
+
+  function-param-1-plus-1opt:
+      - meta_scope: context.function-param-1-plus-1opt
+      - match: '{{is_whitespace_term}}'
+        set: [ function-param-1-plus-1opt-end, expect-expression]
+      - match: ''
+        set: syntax-error-parameter-expression-expected
+
+  function-param-1-plus-1opt-end:
+      - meta_scope: context.function-param-1-plus-1opt-end
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color  
+        set: [ term-continue, expect-expression]
+      - match: ''
+        set: term-continue
+
+  # -------------------------------------------
+  # FUNCTIONS Chain for 2 + 2opt param
+
+  function-param-2-plus-2opt:
+      - meta_scope: context.function-param-2-plus-1opt
+      - match: '{{is_whitespace_term}}'
+        set: [ function-param-1-plus-2opt, expect-comma, expect-expression]
+      - match: ''
+        set: syntax-error-parameter-expression-expected
+
+  function-param-1-plus-2opt:
+      - meta_scope: context.function-param-1-plus-2opt
+      - match: '^'
+        set: error-flag-next-and-pop
+      - match: '{{is_whitespace_term}}'
+        set: [ function-param-0-plus-2opt, expect-expression]
+      - match: ''
+        set: syntax-error-parameter-expression-expected
+
+  function-param-0-plus-2opt:
+      - meta_scope: context.function-param-0-plus-2opt
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color 
+        set: [ function-param-0-plus-2opt-end, expect-expression]
+      - match: ''
+        set: term-continue
+
+  function-param-0-plus-2opt-end:
+      - meta_scope: context.function-param-0-plus-2opt-end
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color 
+        set: [ term-continue, expect-expression]
+      - match: ''
+        set: syntax-error-parameter-expression-expected
+
+  # ------------------------------------------------------------
+  # ╔═╗┬ ┬┌┐┌┌─┐┌┬┐┬┌─┐┌┐┌  ┌─┐┬─┐  ╔═╗┌─┐┌┬┐┌┬┐┌─┐┌┐┌┌┬┐  ╦ ╦┌┬┐┬┬  ┌─┐
+  # ╠╣ │ │││││   │ ││ ││││  │ │├┬┘  ║  │ │││││││├─┤│││ ││  ║ ║ │ ││  └─┐
+  # ╚  └─┘┘└┘└─┘ ┴ ┴└─┘┘└┘  └─┘┴└─  ╚═╝└─┘┴ ┴┴ ┴┴ ┴┘└┘─┴┘  ╚═╝ ┴ ┴┴─┘└─┘
+
+  expect-comma:
+      - meta_scope: context.expect-comma   
+      - match: '{{whitespace_comma}}'
+        scope: support.function mozaic.color 
+        pop: true
+      - match: ''
+        set: syntax-error-comma-expected
+
+  expect-string:
+    - match: '{{is_whitespace_string}}'
+      set: string-parameter
+    - match: ''
+      set: syntax-error-string-expected
+
+  expect-string-or-expression:
+    - match: '{{is_whitespace_string}}'
+      set: string-parameter
+    - match: '{{is_whitespace_term}}'
+      set: expect-expression
+    - match: ''
+      set: syntax-error-string-or-expression-expected
+
+
+  # ------------------------------------------------------------
+  # ╔═╗┌─┐┬  ┬    ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+  # ║  ├─┤│  │    ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+  # ╚═╝┴ ┴┴─┘┴─┘  ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+  call-statement:
+    - match: '\b(?i)(Call)(?i)\b'
+      scope: keyword.operator
+      push:
+      # Illegal to call OnLoad or Ondescription
+      - match: '{{in_mozaic_uncallable_events}}'
+        scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:event_not_callable
+        set: util-finalize-check-empty-line-and-pop
+
+      # Different color for calling mozaic buildin events
+      - match: '{{in_mozaic_events}}'
+        scope: support.class.mozaic.forward-decl mozaic.color markup.italic
+        set: util-finalize-check-empty-line-and-pop
+
+      # Calling user defined event
+      - match: '@((?i)[a-z]+[a-z0-9_]*(?-i))\b'
+        scope: entity.name.function.mozaic.forward-decl markup.italic
+        set: util-finalize-check-empty-line-and-pop
+
+      # Bad match directly after 'Call'
+      - match: '\S+'
+        scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:eventname_missing_at_sign
+        set: error-to-last-and-pop
+
+  # ------------------------------------------------------------
+  # ╔═╗┌┬┐┬─┐┬┌┐┌┌─┐  ╔═╗┌─┐┬─┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┬─┐
+  # ╚═╗ │ ├┬┘│││││ ┬  ╠═╝├─┤├┬┘├─┤│││├┤  │ ├┤ ├┬┘
+  # ╚═╝ ┴ ┴└─┴┘└┘└─┘  ╩  ┴ ┴┴└─┴ ┴┴ ┴└─┘ ┴ └─┘┴└─
+
+  string-parameter: 
+    - match: '{}'
+      scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:invalid_empty_string
+      set: error-to-last-and-pop
+
+    - match: '{'
+      scope: punctuation.definition.string.begin.mozaic
+      set:
+      - meta_scope: mozaic.string meta.block.string string.quoted.other
+      - match: '{{empty_upto_eol}}'
+        set: error-flag-next-and-pop
+      - match: '}'
+        scope: punctuation.definition.string.end.mozaic
+        pop: true
+      - match: '$'
+        pop: true
+
+    - match: '{{is_stringfunc}}'
+      set: mozaic-string-functions
+
+    - match: '\('
+      scope: string.quoted.other  markup.bold
+      set: nested-mozaic-string-functions
+
+    - match: '{{whitespace}}'
+      # skip
+
+    - match: ''
+      set: error-flag-next-and-pop
+
+
+  # ------------------------------------------------------------
+  # ╔╦╗┌─┐┌─┐┌─┐┬┌─┐  ╔═╗┌┬┐┬─┐┬┌┐┌┌─┐  ╔═╗┬ ┬┌┐┌┌─┐┌┬┐┬┌─┐┌┐┌┌─┐
+  # ║║║│ │┌─┘├─┤││    ╚═╗ │ ├┬┘│││││ ┬  ╠╣ │ │││││   │ ││ ││││└─┐
+  # ╩ ╩└─┘└─┘┴ ┴┴└─┘  ╚═╝ ┴ ┴└─┴┘└┘└─┘  ╚  └─┘┘└┘└─┘ ┴ ┴└─┘┘└┘└─┘
+
+  mozaic-string-functions:
+    - match: '\b((?i){{string_funcs_0p}}(?-i))\b'
+      scope: support.function mozaic.color
+      pop:  true
+
+    - match: '\b((?i){{string_funcs_1o}}(?-i))\b'
+      scope: support.function mozaic.color
+      set:        
+      - meta_scope: context.mozaic-string-functions.funcs_1o
+#      - include: util-step-upto-term
+      - match: '{{is_whitespace_term}}'
+        set: expect-expression
+      - match: ''
+        pop: true
+
+    - match: '\b((?i){{string_funcs_1p_1o}}(?-i))\b'
+      scope: support.function mozaic.color
+      set:        
+      - meta_scope: context.mozaic-string-functions.funcs_1p_1o
+      - include: util-step-upto-term
+      - match: '{{is_whitespace_term}}'
+        set: [mozaic-string-func-1opt, expect-expression]
+      - match: ''
+        scope: syntax-error-parameter-expression-expected
+
+    - match: ''
+      set: error-flag-next-and-pop
+
+  mozaic-string-func-1opt:
+    - match: '{{whitespace_comma}}'
+      scope: support.function mozaic.color 
+      set: expect-expression
+    - match: ''
+      pop: true  
+
+  nested-mozaic-string-functions:
+    - meta_scope: mozaic.string context.nested-mozaic-string-functions
+    - match: '{{whitespace}}'
+    # Skip
+    - match: '\('
+      scope: string.quoted.other markup.bold
+      push: nested-mozaic-string-functions
+
+    - match: '{{is_stringfunc}}'
+      push: mozaic-string-functions
+
+    - match: '\)' 
+      scope: string.quoted.other markup.bold
+      pop: true
+
+    - match: ''
+      set: syntax-error-stringfunc-closing-parenthesis-expected
+
+# ===============================================================
+# ╔═╗─┐ ┬┌─┐┬─┐┌─┐┌─┐┌─┐┬┌─┐┌┐┌┌─┐
+# ║╣ ┌┴┬┘├─┘├┬┘├┤ └─┐└─┐││ ││││└─┐
+# ╚═╝┴ └─┴  ┴└─└─┘└─┘└─┘┴└─┘┘└┘└─┘
+
+  expect-expression:
+    - meta_scope: context.expect-expression 
+    # Bail out of errors
+    - match: '{{empty_upto_eol}}'
+      set: syntax-error-expression-expected #        error-flag-next-and-pop
+#KI Bug: error not shown      
+    - match: '{{is_whitespace_end_term}}'
+      set: error-flag-next-and-pop
+    - match: '{{whitespace}}'
+      # Skip
+    - match: '{{not_term}}'
+      set: syntax-error-unexpected-char # error-flag-next-and-pop
+#KI Bug: error not shown
+    - match: '{{is_term}}'
+      set:  term-parse            
+    - match: '{{not_empty_upto_eol}}'
+      set: syntax-error-unexpected-char # error-flag-next-and-pop
+#KI Bug: error not shown
+
+  term-exclude-commands:
+    - match: '{{in_pure_commands_list}}'
+      scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:mozaic_command_not_allowed_in_expressions
+      set: error-to-last-and-pop
+
+  term-parse:
+    - meta_scope: context.term-parse
+    - match: '{{is_term}}'
+      set:
+      - meta_scope: mozaic.expression context.term     
+      - match: '(?=^)'
+        pop: true         
+      - include: term-exclude-commands
+      - include: number
+      - include: mozaic-buildin-functions
+      - include: function-unary-negative
+      - include: function-unary-not
+      - include: variable
+      - include: parentheses
+      - match: ''
+        pop: true
+    - match: ''
+      pop: true
+
+
+  term-continue:
+    - meta_scope: mozaic.operator context.term-continue
+    - match: '{{is_whitespace_comment}}'
+      pop: true
+
+    - match: '{{is_whitespace_and_or}}'
+      scope: support.function.mozaic.forward.decl
+      push: expect-expression
+
+    # Extra special case: start of and/or but other chars behind
+    - match: '{{is_whitespace_start_and_or_not_empty_eol}}'
+      pop: true 
+
+    # Extra special case: start of and/or and empty to eol
+    - match: '{{is_whitespace_start_and_or}}'
+      set: 
+      -  match: '\s'
+         # skip
+      -  match: '{{is_start_and_or}}'
+         scope: invalid.deprecated mozaic.startandor
+         set:   error-flag-next-and-pop
+
+    - match: '[&|\^|\|]'
+      scope: support.function.mozaic.forward.decl
+      push: expect-expression
+
+    # Term without op 
+    - match: '{{is_non_unary_term}}'
+      set: syntax-error-missing-operator #error-flag-next-and-pop
+#KI Bug: error not shown 
+
+    - match: '{{not_whitespace_op}}'
+      pop: true          
+
+
+    - match: '[\+\-\*/%]'
+      scope: support.function.mozaic.forward.decl
+      push: expect-expression
+
+    - match: '(=|<>|>=|<=|<|>)'
+      scope: support.function.mozaic.forward.decl
+      push: expect-expression
+
+
+# ╔╗╔┌─┐┌┐┌   ╦ ╦┌┐┌┌─┐┬─┐┬ ┬  ╔═╗─┐ ┬┌─┐┬─┐┌─┐┌─┐┌─┐┬┌─┐┌┐┌
+# ║║║│ ││││───║ ║│││├─┤├┬┘└┬┘  ║╣ ┌┴┬┘├─┘├┬┘├┤ └─┐└─┐││ ││││
+# ╝╚╝└─┘┘└┘   ╚═╝┘└┘┴ ┴┴└─ ┴   ╚═╝┴ └─┴  ┴└─└─┘└─┘└─┘┴└─┘┘└┘
+
+  expect-non-unary-expression:
+    - meta_scope: context.expect-non-unary-expression
+    - match: '{{empty_upto_eol}}'
+      set: error-flag-next-and-pop
+    - match: '{{is_whitespace_end_term}}'
+      set: error-flag-next-and-pop
+    - match: '{{whitespace}}'
+      # Skip
+    - match: '(?=-)'
+      set: error-flag-next-and-pop    
+    - match: '{{is_non_unary_term}}'
+      set:  term-non-unary-parse  
+    - match: '{{not_empty_upto_eol}}'
+      set: error-flag-next-and-pop
+
+  term-non-unary-parse:
+    - meta_scope: context.term-parse
+    - match: '{{is_non_unary_term}}'
+      set:
+      - meta_scope: context.term
+      - include: number
+      - include: mozaic-buildin-functions
+      - include: variable
+      - include: parentheses
+      - match: ''
+        pop: true
+    - match: ''
+      pop: true
+
+
+# ╔═╗┌─┐┬─┐┌─┐┌┐┌┌┬┐┬ ┬┌─┐┌─┐┬┌─┐
+# ╠═╝├─┤├┬┘├┤ │││ │ ├─┤├┤ └─┐│└─┐
+# ╩  ┴ ┴┴└─└─┘┘└┘ ┴ ┴ ┴└─┘└─┘┴└─┘
+
+  parentheses:  
+    # Empty parenthesis
+    - match: '\((?=\s*\))'
+      scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:empty_parenthesis_not_allowed_in_expression
+      set: error-to-last-and-pop
+    - match: '\('
+      scope: support.function.mozaic.forward.decl
+      push: [ parentheses-end, expect-expression ]
+
+  parentheses-end:
+    # Pop out, if error state is found
+    - match: '(?=^)'
+      pop: true       
+    - match: '\)'
+      scope: support.function.mozaic.forward.decl
+      set: term-continue
+    - match: '{{empty_upto_eol}}'
+      set: error-flag-next-and-pop        
+    - match: '{{whitespace}}'
+      # Skip    
+    - match: ''
+      set: error-flag-next-and-pop        
+
+
+# ╔╗╔┬ ┬┌┬┐┌┐ ┌─┐┬─┐ ┌─┐
+# ║║║│ ││││├┴┐├┤ ├┬┘ └─┐
+# ╝╚╝└─┘┴ ┴└─┘└─┘┴└─┘└─┘
+
+  number:
+
+    - match: '\b0x?[0-9a-fA-F]+'
+      scope: constant.numeric.mozaic
+      set: term-continue
+
+    - match: '\b[0-9]+(\.)?([0-9]*)?'
+      scope: constant.numeric.mozaic
+      set: term-continue
+ 
+    # KI-CHECK
+    #
+    # # Bad number, there is stuff directly behind    
+    # - match: '\b0x?[0-9a-fA-F]+'
+    #   scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:hex_number_followed_directly_by_chars
+    #   set: error-to-last-and-pop
+
+    # - match: '\b[0-9]+(\.[0-9]+)?'
+    #   scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:number_followed_directly_by_chars
+    #   set: error-to-last-and-pop
+
+
+# ╦  ╦┌─┐┬─┐┬┌─┐┌┐ ┬  ┌─┐┌─┐
+# ╚╗╔╝├─┤├┬┘│├─┤├┴┐│  ├┤ └─┐
+#  ╚╝ ┴ ┴┴└─┴┴ ┴└─┘┴─┘└─┘└─┘
+
+  variable:
+        # Filter revered words
+    - match: '{{in_reserved_names}}'
+      scope:  invalid.illegal mozaic.error  _SYNTAX_ERROR:reserved_name
+      set:  error-to-last-and-pop
+ 
+    - match: '{{in_var_excludes}}'
+      scope:  invalid.illegal mozaic.error  _SYNTAX_ERROR:reserved_name
+      set:  error-to-last-and-pop
+
+    - match: '{{in_string_funcs_list}}'
+      scope:  invalid.illegal mozaic.error  _SYNTAX_ERROR:reserved_name
+      set:  error-to-last-and-pop
+
+    - match: '\b(?i)global(?-i)([0-9]){0,2}\b'
+      scope: string.quoted.other markup.bold
+      set: variable-parse
+
+    # Constants (all caps) in italic
+    - match: '\b[A-Z_][A-Z0-9_]*\b'
+      scope: constant.other   
+      set: variable-parse
+
+    # Local vars (starting _ and the lowercase)
+    - match: '\b_[a-z][a-zA-Z0-9_]*\b'
+      scope: markup.italic       
+      set: variable-parse
+
+    # Params (starting lowercase p and then a uppercase letter)
+    - match: '\bp[A-Z]([a-zA-Z0-9_]*)\b'
+      scope: entity.other.attribute-name 
+      set: variable-parse
+
+    # Globals (starting lowercase g and then a uppercase letter)
+    - match: '\bg[A-Z]([a-zA-Z0-9_]*)\b'
+      scope: markup.bold 
+      set: variable-parse
+
+    # All other variable names
+    - match: '\b[a-zA-Z_]([a-zA-Z0-9_]*)\b'
+      set: variable-parse
+
+
+  variable-parse:
+        - meta_scope: context.variable-parse
+        - match: '{{empty_upto_eol}}'
+          pop: true
+        - match: '{{is_whitespace_end_term}}'
+          pop: true
+        - match: '\[(?=\s*\])'
+          scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:variable_with_empty_array_brackets
+          set: error-to-last-and-pop
+        - match: '\['
+          scope: support.function.mozaic.forward.decl
+          set: [ variable-index-end, expect-expression ]
+    #    - match: '{{whitespace}}'
+    #      # Skip    
+        - match: ''
+          set: term-continue
+
+  variable-index-end:
+    # Pop out, if error state is found
+    - match: '(?=^)'
+      pop: true       
+    - match: '\]'
+      scope: support.function.mozaic.forward.decl
+      set: term-continue
+    - match: '{{empty_upto_eol}}'
+      set: error-flag-next-and-pop        
+    - match: '{{whitespace}}'
+      # Skip    
+    - match: ''
+      set: error-flag-next-and-pop       
+
+
+# ===============================================================
+# ╔═╗┬─┐┬─┐┌─┐┬ ┬  ╦┌┐┌┬┌┬┐┬┌─┐┬  ┬┌─┐┌─┐┌┬┐┬┌─┐┌┐┌
+# ╠═╣├┬┘├┬┘├─┤└┬┘  ║││││ │ │├─┤│  │┌─┘├─┤ │ ││ ││││
+# ╩ ╩┴└─┴└─┴ ┴ ┴   ╩┘└┘┴ ┴ ┴┴ ┴┴─┘┴└─┘┴ ┴ ┴ ┴└─┘┘└┘
+  
+  array-assignment:
+    - meta_scope: context.array-assignment  
+    # Valid empty array
+    - match: '\s*\[\s*\]'
+      scope: keyword.operator # support.function.mozaic.forward.decl
+      set: util-finalize-check-empty-line-and-pop
+      
+    - match: '\s*\['
+      scope: keyword.operator # support.function.mozaic.forward.decl
+      set: [ array-initialization, expect-expression ]
+    - match: ''
+      pop: true
+
+  array-initialization:
+    - meta_scope: context.array-initialization 
+    - match: '\]'
+      scope: keyword.operator # support.function.mozaic.forward.decl
+      pop: true
+      set: util-finalize-check-empty-line-and-pop
+    - match: '^'
+      set: error-finalize-flag-next-and-pop   
+
+    - match: '{{whitespace_comma}}'
+      scope: keyword.operator
+      push:  expect-expression     
+    - match: '{{empty_upto_eol}}'
+      set: error-finalize-flag-next-and-pop    
+
+    - match: '{{whitespace}}'
+      # Skip    
+    - match: ''
+      set: error-finalize-flag-next-and-pop   
+
+  array-initialization-end:
+    - match: '{{not_empty_upto_eol}}'
+      set: error-finalize-flag-next-and-pop    
+    - match: ''
+      pop: true
+
+
+# ===============================================================
+# ╦ ╦  ╦┌─┐┬  ┬ ┬┌─┐
+# ║ ╚╗╔╝├─┤│  │ │├┤ 
+# ╩═╝╚╝ ┴ ┴┴─┘└─┘└─┘
+
+  expect-lvalue:
+    - match: '{{in_lvalue_excludes}}'
+      scope:  invalid.illegal mozaic.error  _SYNTAX_ERROR:reserved_name
+      push: error-to-last-and-pop
+
+    - match: '\b(?i)global(?-i)([0-9]){0,2}\b'
+      scope: string.quoted.other markup.bold
+      set: lvalue-inner
+
+    # Constants (all caps) in italic
+    - match: '\b[A-Z_][A-Z0-9_]*\b'
+      scope: constant.other   
+      set: lvalue-inner
+
+    # Local vars (starting _ and lowercase)
+    - match: '\b_[a-z][a-zA-Z0-9_]*\b'
+      scope: markup.italic       
+      set: lvalue-inner
+
+    # Params (starting lowercase p and then a uppercase letter)
+    - match: '\bp[A-Z]([a-zA-Z0-9_]*)\b'
+      scope: entity.other.attribute-name
+      set: lvalue-inner
+
+    # Globals (starting lowercase g and then a uppercase letter)
+    - match: '\bg[A-Z]([a-zA-Z0-9_]*)\b'
+      scope: markup.bold 
+      set: lvalue-inner
+
+    # All other variable names
+    - match: '\b[a-zA-Z_]([a-zA-Z0-9_]*)\b'
+      set: lvalue-inner
+
+    - match: ''
+      set: error-flag-next-and-pop
+
+
+  lvalue-parse:
+    - match: '\b[a-zA-Z_]([a-zA-Z0-9_]*)\b'
+      scope: entity.other.attribute-name    
+      set: lvalue-inner
+
+
+  lvalue-inner:
+        - meta_scope: context.lvalue            
+        - match: '{{empty_upto_eol}}'
+          set: error-flag-next-and-pop
+        - match: '(?=\[)'
+          set: 
+            - meta_scope: context.lvalue-inner  
+            - match: '{{empty_upto_eol}}'
+              pop: true
+            # Mozaic allows empty lvalue index brackets
+            - match: '\[\s*\]'
+              scope: support.function.mozaic.forward.decl
+              pop: true
+
+            # - match: '\[(?=\s*\])'
+            #   scope: invalid.illegal
+            #   set: error-to-last-and-pop
+
+            - match: '\['
+              scope: support.function.mozaic.forward.decl
+              push: [ lvalue-index-end, expect-expression ]
+            - match: ''
+              pop: true
+        - match: ''   
+          pop: true
+
+  lvalue-index-end:
+    - match: '\s*\]'
+      scope: support.function.mozaic.forward.decl
+      pop: true
+
+    - match: ''
+      set: error-flag-next-and-pop      
+ 
+
+# ===============================================================
+# ╔═╗┌─┐┌─┐┬┌─┐┌┐┌┌┬┐┌─┐┌┐┌┌┬┐
+# ╠═╣└─┐└─┐││ ┬││││││├┤ │││ │ 
+# ╩ ╩└─┘└─┘┴└─┘┘└┘┴ ┴└─┘┘└┘ ┴ 
+
+  assignment-statement:
+    - match: '(?=\b[a-zA-Z_]([a-zA-Z0-9_]*))\b'
+      push: [ assignment-statement-expect-equal-sign, expect-lvalue]
+
+
+  assignment-statement-expect-equal-sign:
+    - meta_scope: context.assignment-statement-expect-equal-sign    
+    - match: '^'
+      set: error-finalize-flag-next-and-pop
+    - match: '\s*='
+      scope: keyword.operator     
+      set: assignment-statement-expect-expression
+    - match: ''
+      set: error-finalize-flag-next-and-pop       
+
+
+  assignment-statement-expect-expression:
+    - meta_scope: context.assignment-statement-expect-expression
+    - match: '(?=\s*\[)'
+      set: array-assignment
+    - match: '{{is_whitespace_term}}'
+      set: [ assignment-statement-end, expect-expression]
+    - match: ''    
+      set: error-finalize-flag-next-and-pop 
+
+
+  assignment-statement-end:
+    - meta_scope: context.assignment-statement-end
+    - match: '{{not_empty_upto_eol}}'
+      set: error-finalize-flag-next-and-pop      
+    - match: '^'
+      set: error-finalize-flag-next-and-pop     
+    - match: '{{empty_upto_eol}}'
+      pop: true
+
+
+# ===============================================================
+# ╦═╗┌─┐┌─┐┌─┐┌─┐┌┬┐  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+# ╠╦╝├┤ ├─┘├┤ ├─┤ │   ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+# ╩╚═└─┘┴  └─┘┴ ┴ ┴   ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+  repeat-statement:
+      - match: '\b((?i)repeat(?-i))\b'
+        scope: keyword.operator
+        push: 
+        - meta_scope: context.repeat-statement
+        - match: ''
+          set: [repeat-statement-inner, util-finalize-check-empty-line-and-pop]
+
+  repeat-statement-inner:
+      - meta_scope: context.repeat-statement-inner
+
+      # 'until' was just skipped, so it was flagged by control-structure-error
+      - match: '{{was_until_keyword}}'
+        set: [util-finalize-check-empty-line-and-pop, expect-expression]
+
+      - match: '{{until_keyword}}'
+        scope: keyword.operator
+        set: [util-finalize-check-empty-line-advance-to-next-and-pop, expect-expression]
+
+      - match: '{{bailout_during_repeat}}'
+        scope:  invalid.illegal context.repeat-statement-inner.bail_out mozaic.error  _SYNTAX_ERROR:missing_until
+        pop: true
+
+      # Some error already flagged the '@End' 
+      - match: '{{was_end_keyword}}'
+        pop: true
+
+      # Error-highlight @End
+      - match: '{{end_keyword}}'
+        scope: invalid.illegal context.for-statement-inner.end-keyword mozaic.error  _SYNTAX_ERROR:missing_until
+        pop :  true
+
+      - include: mozaic-language    
+
+
+# ===============================================================
+# ╦ ╦┬ ┬┬┬  ┌─┐  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+# ║║║├─┤││  ├┤   ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+# ╚╩╝┴ ┴┴┴─┘└─┘  ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+  while-statement:
+      - match: '\b((?i)while(?-i))\b'
+        scope: keyword.operator
+        push: 
+        - meta_scope: context.while-statement   
+        - match: '{{empty_upto_eol}}'
+          set: [ while-statement-inner, error-finalize-flag-next-and-pop ]   
+        - match: '{{whitespace}}'
+        # Skip to next char
+        - match: '{{not_term}}'
+          set: [ while-statement-inner, error-flag-next-and-pop ]
+        - match: '{{is_term}}'
+          set: [while-statement-inner, util-finalize-check-empty-line-and-pop, expect-expression]
+
+  while-statement-inner:
+      - meta_scope: context.while-statement-inner
+
+      # 'endwhile' was just skipped, so it was flagged by control-structure-error
+      - match: '{{was_endwhile_keyword}}'
+        set: util-finalize-check-empty-line-and-pop
+
+      - match: '{{endwhile_keyword}}'
+        scope: keyword.operator
+        set: util-finalize-check-empty-line-advance-to-next-and-pop
+
+      - match: '{{bailout_during_while}}'
+        scope:  invalid.illegal context.while-statement-inner.bail_out mozaic.error  _SYNTAX_ERROR:missing_endwhile
+        pop: true
+
+      # Some error already flagged the '@End' 
+      - match: '{{was_end_keyword}}'
+        pop: true
+
+      # Error-highlight @End
+      - match: '{{end_keyword}}'
+        scope: invalid.illegal context.while-statement-inner.end-keyword mozaic.error  _SYNTAX_ERROR:missing_endwhile
+        pop :  true
+
+      - include: mozaic-language    
+
+
+# ===============================================================
+# ╔═╗┌─┐┬─┐  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+# ╠╣ │ │├┬┘  ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+# ╚  └─┘┴└─  ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+  for-statement:
+      - match: '\b((?i)for(?-i))\b'
+        scope: keyword.operator
+        push: 
+        - meta_scope: context.for-statement
+        - match: '{{empty_upto_eol}}'
+          set: [ for-statement-inner, error-finalize-flag-next-and-pop ]
+        - match: '{{whitespace}}'
+        # Skip to next char
+        - match: '{{not_term}}'
+          set: [for-statement-inner, error-finalize-flag-next-and-pop]
+        - match: '{{is_term}}'
+          set: [for-statement-lvalue, expect-lvalue]
+  
+  for-statement-lvalue:
+      - meta_scope: context.for-statement-lvalue
+      - match: '{{empty_upto_eol}}'
+        set: [ for-statement-inner, error-finalize-flag-next-and-pop ]
+      - match: ''
+        set: for-statement-equal-sign
+
+  for-statement-equal-sign:
+    - meta_scope: context.for-statement-equal-sign
+    - match: '^'
+      set: [ for-statement-inner, error-finalize-flag-next-and-pop]
+    - match: '\s*='
+      scope: keyword.operator     
+      set: [ for-statement-to, expect-expression]
+    - match: ''
+      set: [for-statement-inner,error-finalize-flag-next-and-pop]
+
+
+  for-statement-to:
+      - meta_scope: context.for-statement-to
+      - match: '^'
+        set: [ for-statement-inner, error-finalize-flag-next-and-pop]
+      # Color single 't' and flag the error after the t
+      - match: '\b(?i)t(?-i)\b'
+        scope: keyword.operator 
+        set: [ for-statement-inner, error-finalize-flag-next-and-pop]        
+      - match: '\b(?i)to(?-i)\b'
+        scope: keyword.operator 
+        set: [ for-statement-inner, util-finalize-check-empty-line-and-pop, expect-expression]
+      - match: '{{whitespace}}'
+        # Skip
+      - match: ''
+        set: [ for-statement-inner, error-finalize-flag-next-and-pop]
+
+  for-statement-inner:
+      - meta_scope: context.for-statement-inner
+
+      # 'endfor' was just skipped, so it was flagged by control-structure-error
+      - match: '{{was_endfor_keyword}}'
+        set: util-finalize-check-empty-line-and-pop
+
+      - match: '{{endfor_keyword}}'
+        scope: keyword.operator
+        set: util-finalize-check-empty-line-advance-to-next-and-pop
+
+      - match: '{{bailout_during_for}}'
+        scope:  invalid.illegal context.for-statement-inner.bail_out mozaic.error  _SYNTAX_ERROR:missing_endfor
+        pop: true
+
+      # Some error already flagged the '@End' 
+      - match: '{{was_end_keyword}}'
+        pop: true
+
+      # Error-highlight @End
+      - match: '{{end_keyword}}'
+        scope: invalid.illegal context.for-statement-inner.end-keyword mozaic.error  _SYNTAX_ERROR:missing_endfor
+        pop :  true
+
+      - include: mozaic-language
+
+
+# ===============================================================
+# ╦╔═╗  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+# ║╠╣   ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+# ╩╚    ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+  if-statement:
+      - match: '\b((?i)if(?-i))\b'
+        scope: keyword.operator
+        push: 
+        - meta_scope: context.if-statement
+        - match: '{{empty_upto_eol}}'
+          set: [ if-statement-inner, error-finalize-flag-next-and-pop ]
+        - match: '{{whitespace}}'
+          # Skip to next char
+        - match: '{{not_term}}'
+          set: [if-statement-inner, error-flag-next-and-pop]
+        - match: '{{is_term}}'
+          set: [if-statement-inner, util-finalize-check-empty-line-and-pop, expect-expression]
+
+  if-statement-inner:
+      - meta_scope: mozaic.ifblock context.if-statement-inner
+      - match: '\b((?i)elseif(?-i))\b'
+        scope: keyword.operator
+        set:
+        - match: '{{empty_upto_eol}}'
+          set: [if-statement-inner, error-finalize-flag-next-and-pop]         
+        - match: '{{whitespace}}'
+        # Skip to next char        
+        - match: '{{not_term}}'
+          set: [if-statement-inner, error-finalize-flag-next-and-pop]
+        - match: '{{is_term}}'
+          set: [if-statement-inner, util-finalize-check-empty-line-and-pop,expect-expression]
+
+      - match: '\b((?i)else(?-i))\b'
+        scope: keyword.operator
+        set: [if-statement-else, util-finalize-check-empty-line-and-pop]
+
+      # 'endif' was just skipped, so it was flagged by control-structure-error
+      - match: '{{was_endif_keyword}}'
+        set: util-finalize-check-empty-line-and-pop
+
+      - match: '{{endif_keyword}}'
+        scope: keyword.operator
+        set: util-finalize-check-empty-line-advance-to-next-and-pop
+      
+      - match: '{{bailout_during_if}}'
+        scope:  invalid.illegal context.if-statement-inner.bail_out mozaic.error  _SYNTAX_ERROR:missing_endif
+        pop: true
+
+      # Some error already flagged the '@End' 
+      - match: '{{was_end_keyword}}'
+        pop: true
+
+      # Error-highlight @End
+      - match: '{{end_keyword}}'
+        scope: invalid.illegal context.for-statement-inner.end-keyword mozaic.error  _SYNTAX_ERROR:missing_endif
+        pop :  true
+
+      - include: mozaic-language    
+
+
+  if-statement-else:
+      - meta_scope: mozaic.elseblock context.if-statement-else
+
+      # 'endif' was just skipped, so it was flagged by control-structure-error
+      - match: '{{was_endif_keyword}}'
+        set: util-finalize-check-empty-line-and-pop
+
+      - match: '{{endif_keyword}}'
+        scope: keyword.operator
+        set: util-finalize-check-empty-line-advance-to-next-and-pop
+
+      - match: '{{bailout_during_if}}'
+        scope:  invalid.illegal context.if-statement-else.bail_out mozaic.error  _SYNTAX_ERROR:missing_endif
+        pop: true
+
+      # Some error already flagged the '@End' 
+      - match: '{{was_end_keyword}}'
+        pop: true
+
+      # Error-highlight @End
+      - match: '{{end_keyword}}'
+        scope: invalid.illegal context.if-statement-else.end-keyword mozaic.error  _SYNTAX_ERROR:missing_endif
+        pop :  true
+
+      - include: mozaic-language    
+
+
+# ===============================================================
+# ╦ ╦┌┬┐┬┬  ┬┌┬┐┬ ┬  ╔═╗┬ ┬┌┐┌┌─┐┌┬┐┬┌─┐┌┐┌┌─┐
+# ║ ║ │ ││  │ │ └┬┘  ╠╣ │ │││││   │ ││ ││││└─┐
+# ╚═╝ ┴ ┴┴─┘┴ ┴  ┴   ╚  └─┘┘└┘└─┘ ┴ ┴└─┘┘└┘└─┘
+
+  util-finalize-check-empty-line-advance-to-next-and-pop:
+      # Bail out on error
+      - match: '^'
+        set: error-finalize-flag-next-and-pop
+
+      - match: '{{empty_upto_eol}}'
+        set: util-process-comment-and-advance-to-next-and-pop
+
+      - match: '{{whitespace}}'
+        # skip        
+      - match: '{{not_empty_upto_eol}}'
+        set: syntax-error-finalize-unexpected-character
+
+  util-process-comment-and-advance-to-next-and-pop:
+      - meta_scope: context.util-process-comment-and-advance-to-next-and-pop
+      - include: comment
+      - match: '$'
+        set:
+        - meta_scope: context.util-process-comment-and-advance-to-next-and-pop.next
+        - match: '(?=^)'
+          pop: true
+
+
+  util-finalize-check-empty-line-and-pop:
+      # another error wrapped to start
+      - match: '^'
+        set: error-finalize-flag-next-and-pop
+
+      - match: '{{empty_upto_eol}}'
+        pop: true
+      - match: '{{whitespace}}'
+        # skip        
+      - match: '{{not_empty_upto_eol}}'        
+        set: syntax-error-finalize-unexpected-character
+
+
+
+  # (include) to skip to first term
+  util-step-upto-string-or-term:
+    - match: '^'
+      set: error-flag-next-and-pop
+    - match: '{{is_whitespace_string}}'
+      push:
+      - match: '{{whitespace}}'
+        # Skip
+      - match: ''
+        pop: true
+    - match: '{{is_whitespace_term}}'
+      push:
+      - match: '{{whitespace}}'
+        # Skip
+      - match: ''
+        pop: true
+    - match: '{{empty_upto_eol'
+      set: syntax-error-parameter-expression-expected #error-flag-next-and-pop 
+
+
+  # (include) to skip to first term
+  util-step-upto-term:
+    - match: '^'
+      set: error-flag-next-and-pop
+    # This stops before running, if no term follows
+    - match: '{{not_whitespace_term}}'
+      set: syntax-error-parameter-expression-expected #error-flag-next-and-pop 
+    - match: '{{whitespace}}'
+      # Skip
+
+    # This first runs upto last space
+    # - match: '{{whitespace}}'
+    #   # Skip  
+    # - match: '{{not_term}}'
+    #   set: error-flag-next-and-pop 
+
+
+  util-finalize-step-upto-parameter-term:
+    - match: '^'
+      set: error-finalize-flag-next-and-pop 
+    - match: '{{empty_upto_eol}}'
+      set: syntax-error-finalize-parameter-expression-expected
+    - match: '{{whitespace}}'
+      # Skip
+    - match: '{{not_whitespace_term}}'
+      set: syntax-error-finalize-parameter-expression-expected
+
+
+
+# ===============================================================
+# ╦ ╦┌┐┌┌─┐┬─┐┬ ┬  ╔╦╗┌─┐┬─┐┌┬┐┌─┐
+# ║ ║│││├─┤├┬┘└┬┘   ║ ├┤ ├┬┘│││└─┐
+# ╚═╝┘└┘┴ ┴┴└─ ┴    ╩ └─┘┴└─┴ ┴└─┘
+#
+# Unary terms like the minus in 'a = -7' or the not in 'if NOT a
+# are realized as functions taking a expression as single parameter. 
+# In the Mozaic implementation, the expression is not allowed
+# to start with and unary, so 'a = NOT -7' is invalid.
+
+  # Unary -
+  function-unary-negative:
+      - match: '-'
+        scope: support.function.mozaic.forward.decl markup.bold
+        push: 
+        - meta_scope: context.function-unary-negative
+        - match: '(?=\s*)\b((?i)not(?-i))\b' 
+          scope: invalid.illegal context.function-unary-negative.not-found mozaic.error  _SYNTAX_ERROR:unary_follows_unary
+          set: error-to-last-and-pop #error-flag-next-and-pop
+        - match: '(?=\s*)-' 
+          scope: invalid.illegal context.function-unary-negative.minus-found mozaic.error  _SYNTAX_ERROR:unary_follows_unary
+          set: error-to-last-and-pop #error-flag-next-and-pop
+        - include: unary-step-upto-term
+
+        - match: '{{is_term}}'
+          set: [ term-continue, expect-non-unary-expression]
+
+
+  # Unary not
+  function-unary-not:
+      - match: '\b((?i)not(?-i))\b'
+        scope: support.function.mozaic.forward.decl
+        push: 
+        - meta_scope: context.function-unary-not        
+        - match: '(?=\s*)-' 
+          scope: invalid.illegal context.function-unary-not.not-found mozaic.error  _SYNTAX_ERROR:unary_follows_unary
+          set: error-to-last-and-pop #error-flag-next-and-pop
+        - match: '(?=\s*)\b((?i)not(?-i))\b' 
+          scope: invalid.illegal context.function-unary-not.minus-found mozaic.error  _SYNTAX_ERROR:unary_follows_unary 
+          set: error-to-last-and-pop #error-flag-next-and-pop
+        - include: unary-step-upto-term
+        - match: '{{is_term}}'
+          set: [ term-continue, expect-non-unary-expression]
+
+  unary-step-upto-term:
+    - match: '{{empty_upto_eol}}'
+      set: error-flag-next-and-pop 
+    - match: '{{not_whitespace_term}}'
+      set: error-flag-next-and-pop 
+    - match: '{{whitespace}}'
+      # Skip
+
+
+# ===============================================================
+# ╔═╗┌─┐┌┬┐┌┬┐┌─┐┌┐┌┌┬┐┌─┐
+# ║  │ │││││││├┤ │││ │ └─┐
+# ╚═╝└─┘┴ ┴┴ ┴└─┘┘└┘ ┴ └─┘
+
+  comment:
+    - match: '//'
+      push: 
+      - meta_scope: mozaic.comment comment.line.mozaic context.comment        
+      - match: '{{not_boxdrawing_char}}'
+        scope: markup.italic
+      - match: $
+        pop: true     
+
+  outer-comment:
+    # Comments outside of events get a different color
+    - match: '//'
+      push: 
+#     - meta_scope: entity.other.attribute-name markup.italic context.outer-comment
+      - meta_scope: mozaic.comment constant.numeric   context.outer-comment      
+      - match: '{{not_boxdrawing_char}}'
+        scope: markup.italic
+      - match: $
+        pop: true
+
+
+# ===============================================================
+# ╔═╗┬ ┬┌┐┌┌┬┐┌─┐─┐ ┬  ╔═╗┬─┐┬─┐┌─┐┬─┐  ╔═╗┌─┐┌┐┌┌┬┐┌─┐─┐ ┬┌┬┐┌─┐
+# ╚═╗└┬┘│││ │ ├─┤┌┴┬┘  ║╣ ├┬┘├┬┘│ │├┬┘  ║  │ ││││ │ ├┤ ┌┴┬┘ │ └─┐
+# ╚═╝ ┴ ┘└┘ ┴ ┴ ┴┴ └─  ╚═╝┴└─┴└─└─┘┴└─  ╚═╝└─┘┘└┘ ┴ └─┘┴ └─ ┴ └─┘
+# In Sublime 3 one can display the current scope (Tools/Developer/Show Scope Name) -
+# this allows to communicate the detected parser error to the user. Place the
+# cursor right before the first highlighted char and press Shift+Ctrl+Alt+P to
+# display the list of active contexts. All syntax error contexts start with 
+#   _SYNTAX_ERROR: 
+#
+# I already managed to generate contexts for several types of errors - the 
+# main problem are the 'deferred errors' where the highlighting not directly
+# happens while the error was detected but on finalization of the statement.
+#
+
+  syntax-error-finalize-unexpected-character:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:unexpected_character
+    - include: error-finalize-flag-next-and-pop
+
+  syntax-error-finalize-expression-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:expression_expected
+    - include: error-finalize-flag-next-and-pop 
+
+  syntax-error-finalize-parameter-expression-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:parameter_expression_expected
+    - include: error-finalize-flag-next-and-pop
+
+  syntax-error-finalize-string-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:string_expected
+    - include: error-finalize-flag-next-and-pop 
+
+  syntax-error-finalize-parameter-expression-or-string-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:parameter_expression_or_string_expected
+    - include: error-finalize-flag-next-and-pop
+
+  # The control flow statements generate _SYNTAX_ERROR: contexts directly
+  # for the highlighed keywords.
+
+
+
+# Errors detected during expressions or parameter parsing - not yet 
+# working in all cases
+
+  syntax-error-comma-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:comma_expected
+    - include: error-flag-next-and-pop
+
+  syntax-error-string-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:string_expected
+    - include: error-flag-next-and-pop
+
+  syntax-error-string-or-expression-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:string_or_expression_expected
+    - include: error-flag-next-and-pop
+
+  syntax-error-expression-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:expression_expected
+    - include: error-flag-next-and-pop
+
+  syntax-error-parameter-expression-expected:
+    - meta_scope: mozaic.error  _SYNTAX_ERROR:parameter_expression_expected
+    - include: error-flag-next-and-pop
+
+  syntax-error-stringfunc-closing-parenthesis-expected:
+    - meta_scope: mozaic.error _SYNTAX_ERROR:stringfunc_closing_parenthesis_expected
+    - include: error-flag-next-and-pop  
+
+  syntax-error-unexpected-char:
+    - meta_scope: mozaic.error _SYNTAX_ERROR:unexpected_character
+    - include: error-flag-next-and-pop
+
+  syntax-error-missing-operator:
+    - meta_scope: mozaic.error _SYNTAX_ERROR:missing_operator
+    - include: error-flag-next-and-pop
+# ===============================================================
+# ╔═╗┬─┐┬─┐┌─┐┬─┐  ╦ ╦ ┌─┐┌┐┌┌┬┐┬  ┬ ┌┐┌┌─┐
+# ║╣ ├┬┘├┬┘│ │├┬┘  ╠═╣ ├─┤│││ │││  │ ││││ ┬
+# ╚═╝┴└─┴└─└─┘┴└─  ╩ ╩ ┴ ┴┘└┘─┴┘┴─┘┴ ┘└┘└─┘
+
+# Each of the above statements, terms and expressions  want to 
+# output at least a single error-highlight char.
+#
+# So for   
+#     var = a[((((  
+# there would be 5 errors. If there are enough spaces behind
+# that statement, you can clearly see this behavior.
+# 
+# The parser language does not offer 'states' that could
+# be passed between the contexts, but the error-routines
+# use ^ (begin of a line) as 'there was an already flagged error'
+# state. 
+# Only top-level statements (and not expressions) flag the errors 
+#    by calling error-finalize-flag-next-and-pop
+# 
+# Terms and expresions only advance to ^ if they an out
+# of spaces to highlight instead
+
+  error-flag-next-and-pop:
+    # Drop out, if already on next line
+    - match: '(?=^)'
+      pop: true
+
+    # Another error already stepped over the @End
+    - match: '{was_end_keyword}}'
+      pop: true
+
+    # Don't higlight, but instead skip to start of next line
+    - include: error-skip-over-comment-to-next-line
+
+    # directly followed by comment    
+    - include: error-highlight-direct-comment
+
+    # directly followed by eol, carry over to next line
+    - match: '$'
+      set:
+      - meta_scope: context.error-single-carry-over
+      - match: '(?=^)'
+        pop: true
+        
+    - include: error-next-char
+
+
+  error-finalize-flag-next-and-pop:
+    # Try to highlight stuff in start of a line
+    - include: error-finalize-on-line-start
+
+    # Don't higlight, but instead skip to start of next line
+    - include: error-skip-over-comment-to-next-line
+
+    # Reached EOL, skip to next and highlight
+    - match: '$'
+      set: 
+      - meta_scope: mozaic.error context.error-finalize-carry-over
+      - include: error-finalize-on-line-start
+
+    - include: error-next-char
+
+
+  error-skip-over-comment-to-next-line:    
+    - include: error-highlight-direct-comment
+
+    # Try to highlight second last space before comment and not the comment keyword
+    - match: ' (?= //)'
+      scope: invalid.illegal mozaic.error context.error-skip-over-comment-to-next-line.2space-comment
+      pop: true
+
+    # Try to highlight last space before comment and not the comment keyword
+    - match: ' (?=//)'
+      scope: invalid.illegal mozaic.error context.error-skip-over-comment-to-next-line.space-comment
+      pop: true
+
+    - match: '{{is_comment}}'
+      push: 
+        - meta_scope: context.error-skip-over-comment-to-next-line.comment
+        - include: comment
+        - match: '$'
+          set:
+          - meta_scope: mozaic.error context.error-finalize-single-carry-over
+          - match: '(?=^)'
+            pop: true
+    - match: '{{whitespace}}'
+      # Skip
+
+
+  error-finalize-on-line-start:
+    # Next line starts with comment
+    - include: error-highlight-direct-comment
+    # Next line starts at least with a single space or tab
+    - match: '^[ \t][ \t]'
+      scope: invalid.illegal mozaic.error context.error-finalize-on-line-start.sol-whitespace2
+      pop: true
+    - match: '^[ \t]'
+      scope: invalid.illegal mozaic.error context.error-finalize-on-line-start.sol-whitespace1
+      pop: true
+
+    # Next line starts with @End, dirty bail out
+    - match: '{{sol_end_keyword}}'
+      scope: invalid.illegal mozaic.error context.error-finalize-on-line-start.bail-out-on-end
+      pop: true
+
+    # Next line directly starts with something else, so highlight the first char
+    # and stripe-invalidate the rest of the line
+    - match: '^\S'
+      scope: invalid.illegal mozaic.error context.error-finalize-on-line-start.sol-any-char
+      set: error-highlight-stripes-upto-last
+
+
+  error-highlight-stripes-upto-last:  
+    # Stripe highlighting with error-highlight every 2 chars
+    - meta_scope: mozaic.error context.error-highlight-stripes-upto-last
+    - match: '{{empty_upto_eol}}'
+      pop: true
+    - match: '(\S| |\t)(?=//)'
+      scope: invalid.deprecated
+      pop: true
+    - match: '(\S| |\t)(\S| |\t)(\S| |\t)'
+      captures:
+         1: invalid.deprecated
+         2: invalid.deprecated
+         3: invalid.illegal
+    - match: '(\S| |\t)(\S| |\t)'
+      captures:
+         1: invalid.deprecated
+         2: invalid.deprecated
+    - match: '((\S| |\t))'
+      scope: invalid.deprecated
+    - match: '$'
+      pop: true
+
+  error-next-char:
+    # Single space or single char
+    - match: '\s|\S'
+      scope: invalid.illegal context.error-next-char.any-char
+      set:
+      - match: '{{empty_upto_eol}}'
+        scope: mozaic.error context.error-next-char.empty-upto-eol
+        set: skip-to-last-and-pop
+      - match: '{{not_empty_upto_eol}}'
+        scope: mozaic.error context.error-next-char.not-empty-upto-eol
+        set: error-to-last-and-pop
+
+  error-highlight-direct-comment:
+    - match: '(/)(/)'
+      scope: invalid.illegal mozaic.error context.error-highlight-direct-comment
+      set:
+      - meta_scope: context.error-highlight-direct-comment comment.line.mozaic markup.italic  
+      - match: $
+        pop: true    
+
+  error-to-eol-and-pop:
+    # Pop before comment
+    - meta_scope: mozaic.error context.skip-to-eol-and-pop
+    - match: '{{is_comment}}'
+      scope: invalid.deprecated context.error-to-eol-and-pop.is-comment
+      pop: true      
+    - match: '\s|\S'
+      scope: invalid.deprecated mozaic.error context.error-to-eol-and-pop.any-char
+    - match: '$'
+      scope: mozaic.error context.error-to-eol-and-pop.eol
+      pop: true
+
+  skip-to-eol-and-pop:
+    # Pop before comment
+    - meta_scope: context.skip-to-eol-and-pop
+    - match: '{{is_comment}}'
+      scope: context.skip-to-eol-and-pop.is-comment
+      pop: true
+    - match: '$'
+      scope: context.skip-to-eol-and-pop.eol
+      pop: true
+
+  error-to-last-and-pop:
+    # Pop before comment
+    - meta_scope: mozaic.error context.skip-to-eol-and-pop
+    - match: '{{is_comment}}'
+      scope: mozaic.error context.error-to-last-and-pop.is-comment
+      pop: true
+    - match: '{{empty_upto_eol}}'
+      scope: mozaic.error context.error-to-last-and-pop.empty-upto-eol
+      pop: true
+    - match: '\s|\S'
+      scope: invalid.deprecated mozaic.error context.error-to-last-and-pop.any-char
+    - match: '$'
+      scope: mozaic.error context.error-to-last-and-pop.eol
+      pop: true
+
+  skip-to-last-and-pop:
+    # Pop before comment
+    - meta_scope: context.skip-to-eol-and-pop
+    - match: '{{is_comment}}'
+      scope: context.skip-to-last-and-pop.is-comment
+      pop: true
+    - match: '{{empty_upto_eol}}'
+      scope: context.skip-to-last-and-pop.empty-upto-eol
+      pop: true    
+    - match: '$'
+      scope: context.skip-to-last-and-pop.eol
+      pop: true
+
+
+# ===============================================================
+# ╔╦╗ ╔═╗ ╦ ╔╗╔
+# ║║║ ╠═╣ ║ ║║║
+# ╩ ╩ ╩ ╩ ╩ ╝╚╝
+
+  main:
+    - meta_scope: context.main
+    - clear_scopes: true
+    - include: outer-comment
+    - include: mozaic-description
+    - include: mozaic-event
+    - include: user-event
+
+    # Error-highlight anything outside of the event functions
+    - match: '\S(.)*$'
+      scope: invalid.illegal mozaic.error  _SYNTAX_ERROR:unexpected_characters_outside_of_event
+      push:
+      - meta_scope: invalid.illegal
+      - match: $
+        pop: true
+
+
+  # ------------------------------------------------------------
+  # ┌┬┐┌─┐┌─┐┬  ┌─┐┬  ┬┌─┐┬    ┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐┌─┐
+  #  │ │ │├─┘│  ├┤ └┐┌┘├┤ │    └─┐ │ ├─┤ │ ├┤ │││├┤ │││ │ └─┐
+  #  ┴ └─┘┴  ┴─┘└─┘ └┘ └─┘┴─┘  └─┘ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ └─┘
+
+  # For blue  C Icon add   meta.class.mozaic
+  # For green F Icon add   meta.function.mozaic
+
+  mozaic-description:
+    - match: '@((?i)Description(?-i))\b' 
+      scope: support.class.mozaic mozaic.color meta.class.mozaic markup.italic
+      push:
+      - meta_scope: context.mozaic-description
+      - match: '\s*@((?i)End(?-i))\b'
+        scope: support.class.mozaic.forward-decl  meta.class.mozaic mozaic.color markup.italic 
+        pop: true
+      - match: '.*'
+        scope: string.quoted.other markup.italic  # Yellow / italic
+
+  mozaic-event:    
+    - match: '{{in_mozaic_events}}'
+      scope: support.class.mozaic meta.class.mozaic mozaic.color markup.italic
+      set:
+        - match: '{{not_empty_upto_eol}}'
+          scope: context.mozaic-event.bad-char-after-name
+          push:  syntax-error-finalize-unexpected-character
+        - match: ''
+          set: 
+          - meta_scope: mozaic.block context.mozaic-event
+
+          # Did something else flag the @End keyqword ?
+          - match: '{{was_end_keyword}}'
+            pop: true
+
+          - match: '{{end_keyword}}'
+            scope: support.class.mozaic.forward-decl meta.class.mozaic mozaic.color markup.italic
+            pop: true            
+            
+          - match: '(?i)(@en|@e|@)(?-i)'
+            scope: invalid.illegal mozaic.allow.endkeyword
+            push:  syntax-error-finalize-unexpected-character
+            
+          - include: mozaic-language
+
+  user-event:
+    # End is not a valid user event name, so 
+    - match: '(?!(?i)@End\b(?-i))@((?i)[a-z]+[a-z0-9_]*(?-i))\b'
+      scope: entity.name.function.mozaic meta.function.mozaic markup.italic
+      set:
+        - match: '{{not_empty_upto_eol}}'
+          scope: context.user-event.bad-char-after-name
+          push:  syntax-error-finalize-unexpected-character
+        - match: ''
+          set: 
+          # - meta_scope: meta.block.user.event meta.function.mozaic  # F Icon
+          - meta_scope: mozaic.block meta.block.user.event 
+
+          # Did something else flag the @End keyqword ?
+          - match: '{{was_end_keyword}}'
+            pop: true
+
+          - match: '{{end_keyword}}'
+            scope: entity.name.function.mozaic.forward-decl meta.function.mozaic markup.italic
+            pop: true
+
+          - match: '(?i)(@en|@e|@)(?-i)'
+            scope: invalid.illegal mozaic.allow.endkeyword
+            push:  syntax-error-finalize-unexpected-character
+            
+          - include: mozaic-language
+
+
+  # ------------------------------------------------------------
+  # ┌┬┐┌─┐┌─┐┬  ┌─┐┬  ┬┌─┐┬    ┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐┌─┐
+  #  │ │ │├─┘│  ├┤ └┐┌┘├┤ │    └─┐ │ ├─┤ │ ├┤ │││├┤ │││ │ └─┐
+  #  ┴ └─┘┴  ┴─┘└─┘ └┘ └─┘┴─┘  └─┘ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ └─┘
+
+  exclude-functions-and-closings:
+    # Hard bail out if one of the control statement closings is found
+    - match: '{{in_illegal_cmds}}'
+      scope:  invalid.illegal context.exclude-functions-and-closings.reserved-end-cmds mozaic.error  _SYNTAX_ERROR:unexpected_keyword
+      push: error-to-last-and-pop
+
+    # Bail out if string is not allowed in lvalue, as only assignment is possible
+    - match: '{{in_pure_lvalue_excludes}}'
+      scope: invalid.illegal  context.exclude-functions-and-closings.lvalue-excludes mozaic.error  _SYNTAX_ERROR:excluded_keyword
+      push: error-to-last-and-pop
+      
+      
+  exclude-inc-dec-assignment:
+    # Additionally check for 'non-pure' functions and commands followed by =
+    - match: '{{is_inc_dec_assignment}}'
+      scope: invalid.illegal  context.exclude-non-pure-assignment mozaic.error  _SYNTAX_ERROR:inc-or-dec-not-allowed-in-assignment
+      push: error-to-last-and-pop
+      
+
+  mozaic-language:
+      - include: comment
+      - include: buildin-commands
+      - include: for-statement
+      - include: repeat-statement
+      - include: while-statement
+      - include: if-statement
+      - include: call-statement
+      - include: exclude-inc-dec-assignment
+      - include: mozaic-buildin-commands
+
+      - include: exclude-functions-and-closings
+      # Check for assignments after all other possibilites are ruled out
+      - include: assignment-statement
+
+      # Flag all other 
+      - match: '\S'        
+        scope: invalid.illegal mozaic.error _SYNTAX_ERROR:unexpected_char
+        push: error-to-last-and-pop
+ 
+
+  # Colors   scope
+  #-----------------------
+  # 66D9EF  blue            support.function.mozaic
+  # 66D9EF  blue/italics    support.class.mozaic
+  # A6E22E  green           entity.other.attribute-name, entity.name.class   
+  # F92672  red             keyword.operator *, entity.name.tag
+  # 75715E  gray            comment.line.mozaic
+  # AE81FF  purple          constant.numeric.mozaic
+  # E6DB74  yellow          string.quoted.other
+  #         white           text ?
+  # FD971F  orange/italics  variable.parameter
+  # F92672  Red/inverse     invalid.illegal *
+  # AE81FF  Purple/inverse  invalid.deprecated
+
+  # Attributes
+  #-----------------------
+  # markup.italic 
+  # markup.bold

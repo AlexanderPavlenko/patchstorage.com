@@ -1,0 +1,12 @@
+@OnLoad
+  ccOut = 13 // Copy each note release velocity as CC
+  out = 0
+@End
+
+@OnMidiInput
+  SendMIDIThru
+  if MIDICommand = 0x80 // note off
+    out = MIDIByte3
+    SendMIDIOut (0xB0 + MIDIChannel), ccOut, out
+  endif  
+@End
