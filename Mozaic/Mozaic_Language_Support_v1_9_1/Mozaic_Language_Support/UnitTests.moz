@@ -1,0 +1,1513 @@
+// ██╗   ██╗███╗   ██╗ ██╗████████╗
+// ██║   ██║████╗  ██║ ██║╚══██╔══╝
+// ██║   ██║██╔██╗ ██║ ██║   ██║   
+// ██║   ██║██║╚██╗██║ ██║   ██║   
+// ╚██████╔╝██║ ╚████║ ██║   ██║   
+//  ╚═════╝ ╚═╝  ╚═══╝ ╚═╝   ╚═╝   
+//                                   
+//          ████████╗███████╗███████╗████████╗███████╗
+//          ╚══██╔══╝██╔════╝██╔════╝╚══██╔══╝██╔════╝
+//             ██║   █████╗  ███████╗   ██║   ███████╗
+//             ██║   ██╔══╝  ╚════██║   ██║   ╚════██║
+//             ██║   ███████╗███████║   ██║   ███████║
+//             ╚═╝   ╚══════╝╚══════╝   ╚═╝   ╚══════╝
+// v1.91 19.04.2021
+//
+// Wikipedia: 
+//    In computer programming, unit testing is a software testing method by
+//    which individual units of source code [...] are tested to determine 
+//    whether hey are fit for use
+//
+//    [ ... ]
+//    The goal of unit testing is to isolate each part of the program and 
+//    show that the individual parts are correct
+//
+// To test the syntax parser this unit-test script not only lists valid 
+// use cases but focuses on in-deep tests of the syntax error detection
+// and how the parser reacts and highlights these errors
+
+// ==========================================================================
+// ╔╦╗┌─┐┌─┐┌─┐┬┌─┐  ╔╗ ┬ ┬┬┬  ┌┬┐┬┌┐┌┌─┐
+// ║║║│ │┌─┘├─┤││    ╠╩╗│ │││   ││││││└─┐
+// ╩ ╩└─┘└─┘┴ ┴┴└─┘  ╚═╝└─┘┴┴─┘─┴┘┴┘└┘└─┘
+// This section should show no errors
+
+@UnitTest__Mozaic_Buildin_Commands_and_Functions
+  // MIDI commands and functions
+  SendMIDIOut  byte1, byte2, byte3 
+  SendMIDINoteOn  chan,note,velocity
+  SendMIDINoteOff chan,note,velocity
+  SendMIDICC      chan,controller,value
+  SendMIDIPitchbend     chan, value
+  SendMIDIProgramChange chan, value 
+  SendMIDIBankSelect    chan, msb, lsb
+  SendMIDIThru
+  SendMIDIThruOnCh      chan
+  SendMIDIProgramChange chan, patch
+  ConfigureMPE  lower, upper
+  _f = MIDIChannel + MIDICommand + MIDINote + MIDIVelocity
+  _f = MIDIByte1 + MIDIByte2 + MIDIByte3 + MIDISustainPedalDown
+
+  // Sysex commands and functions
+  SendSysex  array, length
+  SendSysexThru
+  ReceiveSysex array
+  _f = SysexSize
+
+  // AUv3 and Host commands and functions
+  SetShortName {name}
+  SetMetroPPQN  ppqn 
+  SetMetroSwing swing 
+  SetAUParameter param, value 
+  _f = HostTempo + Hostbar + HostBeat + HostBeatsPerMeasure
+  _f = HostRunning + CurrentMetroPulse + LastAUParameter + QuarterNote
+  _f = GetAUParameter param
+
+  // Timer and LFO  commands and functions
+  StartTimer
+  StopTimer
+  ResetTimer
+  SetTimerInterval msec 
+  SetupLFO lfo, min, max, sync, freq
+  SetLFOType lfo, {type}
+  ResetLFO lfo,phase
+  _f = GetLFOValue lfo 
+
+  // Musical Scale commands and functions
+  CustomScale c,c_s,d,d_s,e,f,g,g_s,a,a_s,b 
+  PresetScale {scale}
+  SetRootNote  root 
+  _f = InScale note 
+  _f = ScaleQuantize note
+
+  // GUI and Interaction commands and functions
+  ShowLayout layout 
+  LabelPad pad, {label}
+  LabelPads {title}
+  LabelKnobs {title}
+  LabelXY {title}
+  LabelKnob knob, {label}
+  SetKnobValue knob, value
+  LatchPad pad, state 
+  FlashPad pad
+  FlashUserLed
+  SetXYValues x,y
+  Log var,{text},(var),{text}
+  LogTime
+  Exit
+
+  _f = GetXValue + GetYValue
+  _f = GetXYMorphValue topleft, topright,bottomleft,bottomright
+  _f = GetKnobValue knob
+  _f = LastKnob + LastPad + LastPadVelocity
+  _f = MotionPitch + MotionRoll + MotionYaw
+  _f = ShiftPressed
+  _f = PadState pad
+  Log NoteName note, YES
+  Log RootNoteName
+  Log ScaleName scalenum
+
+  // Variables and Math commands and functions
+  FillArray array, values
+  CopyArray source,dest, numcells
+  Inc var, max
+  Dec var, min
+  _f = Unassigned var 
+  _f = Round value 
+  _f = RoundUp value 
+  _f = RoundDown value 
+  _f = Random min,max
+  _f = Clip var, min, maxm
+  _f = TranslateCurve value, curve, min, max    
+  _f = TranslateScale value, in_min,in_max, out_min, out_max
+  _f = Sin value
+  _f = Cos value
+  _f = Tan value
+  _f = Tanh value
+  _f = Exp value
+  _f = Sqrt value
+  _f = Abs value
+  _f = Logn value
+  _f = Log10 value
+  _f = Pow base , exponent
+  _f = Div value , divisor
+  
+  // Inc and Dec are not only commands, but also functions
+  _f = Inc value
+  _f = Dec value
+  
+  // NoteStateMatrix commands and functions
+  ResetNoteStates init_value
+  SetNoteState chan, note, value 
+  _f = GetNoteState chan, note 
+
+
+// String functions
+  LabelKnobs {Bank },RootNoteName, { },a, (ScaleName sc)
+  LabelPads  {Bank },RootNoteName, { },a, ScaleName sc
+  LabelXY    {Bank },RootNoteName, { },a, NoteName note, YES 
+  LabelXY    {Bank },(NoteName note, YES ), { }, (ScaleName sc)
+
+  LabelKnob knob, {Bank },RootNoteName, { },a  
+  LabelPad  pad,  {Bank },RootNoteName, { },a  
+@End
+
+// ==========================================================================
+// ╔╦╗┌─┐┌─┐┌─┐┬┌─┐  ╔═╗┬  ┬┌─┐┌┐┌┌┬┐┌─┐
+// ║║║│ │┌─┘├─┤││    ║╣ └┐┌┘├┤ │││ │ └─┐
+// ╩ ╩└─┘└─┘┴ ┴┴└─┘  ╚═╝ └┘ └─┘┘└┘ ┴ └─┘
+
+@OnMidiNote  // Mozaic events names use different coloring 
+@End 
+
+@OnTimer     // Mozaic events names use different coloring 
+@End 
+
+// ╔═╗┌─┐┬  ┬  ┬┌┐┌┌─┐  ╔╦╗┌─┐┌─┐┌─┐┬┌─┐  ╔═╗┬  ┬┌─┐┌┐┌┌┬┐┌─┐
+// ║  ├─┤│  │  │││││ ┬  ║║║│ │┌─┘├─┤││    ║╣ └┐┌┘├┤ │││ │ └─┐
+// ╚═╝┴ ┴┴─┘┴─┘┴┘└┘└─┘  ╩ ╩└─┘└─┘┴ ┴┴└─┘  ╚═╝ └┘ └─┘┘└┘ ┴ └─┘
+
+@UnitTest__Calling_Mozaic_Event
+  Call @OnLoad        // err invalid to call
+  Call @Description   // err invalid to call
+  Call @OnMidiInput
+  Call @OnMidiNote
+  Call @OnMidiNoteOn
+  Call @OnMidiNoteOff
+  Call @OnMidiCC
+  Call @OnSysex
+  Call @OnPedalDown
+  Call @OnPedalUp
+  Call @OnHostStart
+  Call @OnHostStop
+  Call @OnNewBar
+  Call @OnNewBeat
+  Call @OnMetroPulse
+  Call @OnTimer
+  Call @OnPadDown
+  Call @OnPadUp
+  Call @OnShiftDown
+  Call @OnShiftUp
+  Call @OnKnobChange
+  Call @OnXYChange
+  Call @OnAuParameter
+@End
+
+
+// ╦  ╦┌─┐┬─┐┬┌─┐┌┐ ┬  ┌─┐┌─┐  ╔═╗┌┬┐┬ ┬┬  ┬┌┐┌┌─┐
+// ╚╗╔╝├─┤├┬┘│├─┤├┴┐│  ├┤ └─┐  ╚═╗ │ └┬┘│  │││││ ┬
+//  ╚╝ ┴ ┴┴└─┴┴ ┴└─┘┴─┘└─┘└─┘  ╚═╝ ┴  ┴ ┴─┘┴┘└┘└─┘
+ 
+@UnitTest__Variables_Styling
+
+  // lvalue and variable should use the same colorization and styling
+  // even though defined in different parser parts
+  
+  _abcDEF   = _localVar       // start _ and lowercase
+  _AbcDef   = normalVar 
+
+  pAbcDef   = pParameter      // start p and uppercase
+  paBcdef   = normalVar
+  p_abc     = normalVar
+  
+  gAbcDef   = gGlobalVariable // start g and uppercase
+  gaBcdef   = normalVar
+  g_abc     = normalVar
+  
+  global9   = global12[0]     // all variants of 'global' + upto 2 numbers
+  gLobal2   = gLOBal99
+  GLOBAL    = GLOBAL42[42]
+  globalX   = normalVar
+  global100 = normalVar
+@End
+
+
+// ╔═╗┌─┐┌┬┐┌─┐┬  ┌─┐─┐ ┬  ╔═╗─┐ ┬┌─┐┬─┐┌─┐┌─┐┌─┐┬┌─┐┌┐┌┌─┐
+// ║  │ ││││├─┘│  ├┤ ┌┴┬┘  ║╣ ┌┴┬┘├─┘├┬┘├┤ └─┐└─┐││ ││││└─┐
+// ╚═╝└─┘┴ ┴┴  ┴─┘└─┘┴ └─  ╚═╝┴ └─┴  ┴└─└─┘└─┘└─┘┴└─┘┘└┘└─┘
+
+@UnitTest__Valid_Complex_Expressions
+
+  var[ _i + ( _cnt%3 ) ] = A * ( ( c ^ 7 ) | 0x1247)
+
+  a = b + ( c * d[21] + (Random 1,GetKnobValue knob))
+
+  global42[ _idx ] = b + (c + (d + (e + f)))
+
+  for _i = (a + b % 4) to c + (Round d) * Sin e
+    Log { }
+  endfor
+
+  if a and not (b or c)
+    Log { _valid=},x + (Pow a, Sqrt n)
+  endif
+@End 
+
+
+// ███████╗██████╗ ██████╗  ██████╗ ██████╗ 
+// ██╔════╝██╔══██╗██╔══██╗██╔═══██╗██╔══██╗
+// █████╗  ██████╔╝██████╔╝██║   ██║██████╔╝
+// ██╔══╝  ██╔══██╗██╔══██╗██║   ██║██╔══██╗
+// ███████╗██║  ██║██║  ██║╚██████╔╝██║  ██║
+// ╚══════╝╚═╝  ╚═╝╚═╝  ╚═╝ ╚═════╝ ╚═╝  ╚═╝
+//
+//           ██████╗██╗  ██╗███████╗ ██████╗██╗  ██╗███████╗
+//          ██╔════╝██║  ██║██╔════╝██╔════╝██║ ██╔╝██╔════╝
+//          ██║     ███████║█████╗  ██║     █████╔╝ ███████╗
+//          ██║     ██╔══██║██╔══╝  ██║     ██╔═██╗ ╚════██║
+//          ╚██████╗██║  ██║███████╗╚██████╗██║  ██╗███████║
+//          ╚═════╝╚═╝  ╚═╝╚══════╝ ╚═════╝╚═╝  ╚═╝╚══════╝
+
+
+
+  // ================================================================
+  // ╦┌┐┌┬  ┬┌─┐┬─┐┌─┐┌─┐  ╦ ╦┌─┐┌─┐┌─┐┌─┐  ╔═╗┬─┐┬─┐┌─┐┬─┐┌─┐
+  // ║│││└┐┌┘├┤ ├┬┘└─┐├┤   ║ ║└─┐├─┤│ ┬├┤   ║╣ ├┬┘├┬┘│ │├┬┘└─┐
+  // ╩┘└┘ └┘ └─┘┴└─└─┘└─┘  ╚═╝└─┘┴ ┴└─┘└─┘  ╚═╝┴└─┴└─└─┘┴└─└─┘
+  // Error on commands used in functions or functions used as lvalue
+  // in assignments. 
+  // All lines should show errors
+
+@UnitTest__Inverse_Command_or_Function_Usage
+  // MIDI commands and functions
+  _error = SendMIDIOut  byte1, byte2, byte3 
+  _error = SendMIDINoteOn  chan,note,velocity 
+  _error = SendMIDINoteOff chan,note,velocity 
+  _error = SendMIDICC      chan,controller,value 
+  _error = SendMIDIPitchbend     chan, value 
+  _error = SendMIDIProgramChange chan, value 
+  _error = SendMIDIBankSelect    chan, msb, lsb 
+  _error = SendMIDIThru 
+  _error = SendMIDIThruOnCh    SendMIDIProgramChange 
+  _error = ConfigureMPE  lower, upper 
+  
+  // Sysex commands and functions
+  _error = SendSysex  array, length 
+  _error = SendSysexThru 
+  _error = ReceiveSysex array 
+
+  // AUv3 and Host commands and functions
+  _error = SetShortName {name} 
+  _error = SetMetroPPQN  ppqn 
+  _error = SetMetroSwing swing 
+  _error = SetAUParameter param, value 
+  HostTempo  = _error 
+  HostBar    = _error 
+  HostBeat   = _error 
+  HostBeatsPerMeasure = _error 
+  HostRunning = _error 
+  CurrentMetroPulse = _error 
+  LastAUParameter = _error 
+  QuarterNote = _error 
+  GetAUParameter param 
+
+  // Timer and LFO  commands and functions
+  _error = StartTimer 
+  _error = StopTimer 
+  _error = ResetTimer 
+  _error = SetTimerInterval msec 
+  _error = SetupLFO lfo, min, max, sync, freq 
+  _error = SetLFOType lfo, {type} 
+  _error = ResetLFO 
+  GetLFOValue lfo 
+
+  // Musical Scale commands and functions
+  _error = CustomScale c,c_s,d,d_s,e,f,g,g_s,a,a_s,b 
+  _error = PresetScale {scale} 
+  _error = SetRootNote  root 
+  InScale note       
+  ScaleQuantize note 
+
+  // GUI and Interaction commands and functions
+  _error = ShowLayout layout 
+  _error = LabelPad pad, {label} 
+  _error = LabelPads {title} 
+  _error = LabelKnobs {title} 
+  _error = LabelXY {title} 
+  _error = LabelKnob knob, {label} 
+  _error = SetKnobValue knob, value 
+  _error = LatchPad pad, state 
+  _error = FlashPad pad 
+  _error = FlashUserLed 
+  _error = SetXYValues x,y 
+  _error = Log var,{text} 
+  _error = LogTime 
+  _error = Exit 
+  GetXValue = _error 
+  GetYValue = _error 
+	GetXYMorphValue topleft, topright,bottomleft,bottomright 
+  GetKnobValue knob         
+  LastKnob = _error         
+  LastPad = _error          
+  LastPadVelocity = _error  
+  MotionPitch = _error      
+  MotionYaw = _error        
+  MotionRoll = _error       
+  ShiftPressed = _error     
+  PadState pad              
+  NoteName note, YES        
+  RootNoteName              
+  ScaleName scalenum        
+
+  // Variables and Math commands and functions
+  _error = FillArray array, vakues 
+  _error = CopyArray source,dest, numcells 
+  Unassigned var            
+  Round value               
+  RoundUp value             
+  RoundDown value           
+  Random min,max            
+  Clip var, min, max        
+  TranslateCurve value, curve, min, max                   
+  TranslateScale value, in_min,min_max, out_min, out_max  
+  Sin value                 
+  Cos value                 
+  Tan value                 
+  Tanh value                
+  Exp value                 
+  Sqrt value                
+  Abs value                 
+  Logn value                
+  Log10 value               
+  Pow base, exponent        
+  Div value,divisor         
+
+  // NoteStateMatrix commands and functions
+  _error = ResetNoteStates init_value      
+  _error = SetNoteState chan, note, value   
+  GetNoteState chan, note    
+
+
+  // Wrong usage of string functions
+  _error = NoteName note 
+  _error = RootNoteName 
+  _error = ScaleName 
+
+  NoteName   note  
+  RootNoteName      
+  ScaleName n 
+
+
+  // These name excludes also apply to 'for' statements
+  for SendMIDICC = 0 to 10   
+  endfor
+
+  for Sin = 0 to 10   
+  endfor
+
+  for NoteName = 0 to 10   
+  endfor
+  
+@End
+
+
+  // ================================================================
+  // ╔═╗┌─┐┌─┐┬┌─┐┌┐┌┌┬┐┌─┐┌┐┌┌┬┐  ╔═╗─┐ ┬┌─┐┬  ┬ ┬┌┬┐┌─┐┌┬┐  ╔╗╔┌─┐┌┬┐┌─┐┌─┐
+  // ╠═╣└─┐└─┐││ ┬││││││├┤ │││ │   ║╣ ┌┴┬┘│  │  │ │ ││├┤  ││  ║║║├─┤│││├┤ └─┐
+  // ╩ ╩└─┘└─┘┴└─┘┘└┘┴ ┴└─┘┘└┘ ┴   ╚═╝┴ └─└─┘┴─┘└─┘─┴┘└─┘─┴┘  ╝╚╝┴ ┴┴ ┴└─┘└─┘
+  // There are other reserved names not allowed as lvalue than 
+  // function names tested above.
+  // All lines should show errors
+
+@UnitTest__Assignment_To_Excluded_Names
+
+  // Exclude event names
+  OnLoad        = _error   
+  Description   = _error   
+  OnMidiInput   = _error   
+  OnMidiNote    = _error   
+  OnMidiNoteOn  = _error   
+  OnMidiNoteOff = _error   
+  OnMidiCC      = _error   
+  OnSysex       = _error   
+  OnPedalDown   = _error   
+  OnPedalUp     = _error   
+  OnHostStart   = _error   
+  OnHostStop    = _error   
+  OnNewBar      = _error   
+  OnNewBeat     = _error   
+  OnMetroPulse  = _error   
+  OnTimer       = _error   
+  OnPadDown     = _error   
+  OnPadUp       = _error   
+  OnShiftDown   = _error   
+  OnShiftUp     = _error   
+  OnKnobChange  = _error   
+  OnXYChange    = _error   
+  OnAuParameter = _error   
+
+  // Exclude function names
+  MIDIChannel   = _error 
+  MIDICommand   = _error 
+  MIDINote      = _error 
+  MIDIVelocity  = _error 
+  MIDIByte1     = _error 
+  MIDIByte2     = _error 
+  MIDIByte3     = _error 
+  MIDISustainPedalDown = _error 
+  
+  // Exclude Inc/Dec
+  Inc           = _error
+  Dec           = _error
+  
+  // Excluded constants
+  YES           = _error 
+  NO            = _error 
+  TRUE          = _error 
+  FALSE         = _error 
+
+  // Excluded operators
+  NOT           = _error 
+  AND           = _error 
+  OR            = _error 
+
+  // Excluded keywords
+  TO            = _error 
+@End
+
+  // ================================================================
+  // ╔═╗╔═╗╦═╗  ╦ ╦  ╦┌─┐┬  ┬ ┬┌─┐  ╔═╗─┐ ┬┌─┐┬  ┬ ┬┌┬┐┌─┐┌┬┐  ╔╗╔┌─┐┌┬┐┌─┐┌─┐
+  // ╠╣ ║ ║╠╦╝  ║ ╚╗╔╝├─┤│  │ │├┤   ║╣ ┌┴┬┘│  │  │ │ ││├┤  ││  ║║║├─┤│││├┤ └─┐
+  // ╚  ╚═╝╩╚═  ╩═╝╚╝ ┴ ┴┴─┘└─┘└─┘  ╚═╝┴ └─└─┘┴─┘└─┘─┴┘└─┘─┴┘  ╝╚╝┴ ┴┴ ┴└─┘└─┘
+  // The lvalue assignment in FOR statement is handled in a different case
+  // All lines should show errors
+  
+@UnitTest__Excluded_Names_In_For
+
+  // Event names are excluded
+  for OnLoad = 0 to 10   
+  endfor
+
+  // Function names are excluded
+  for MIDIChannel = 0 to 10   
+  endfor
+  
+  // Function names are excluded
+  for HostBar = 0 to 10   
+  endfor
+
+  for Inc = 0 to 10
+  endfor
+   
+  // Keywords are excluded
+  for for = 0 to 10 
+  endfor
+
+  for endfor = 0 to 10 
+  endfor
+
+  for while = 0 to 10 
+  endfor
+  
+  for endwhile = 0 to 10 
+  endfor
+
+  for repeat = 0 to 10 
+  endfor
+
+  for until = 0 to 10 
+  endfor
+
+  for if = 0 to 10 
+  endfor
+    
+  for else = 0 to 10 
+  endfor
+
+  for elseif = 0 to 10 
+  endfor
+
+  for endif = 0 to 10 
+  endfor
+
+  // Verbal operators are excluded
+  for and = 0 to 10   
+  endfor
+
+  for or = 0 to 10   
+  endfor
+
+  for not = 0 to 10   
+  endfor
+
+@End
+
+  // ================================================================
+  // ╔═╗─┐ ┬┌─┐┬─┐┌─┐┌─┐┌─┐┬┌─┐┌┐┌  ╔═╗─┐ ┬┌─┐┬  ┬ ┬┌┬┐┌─┐┌┬┐  ╔╗╔┌─┐┌┬┐┌─┐┌─┐
+  // ║╣ ┌┴┬┘├─┘├┬┘├┤ └─┐└─┐││ ││││  ║╣ ┌┴┬┘│  │  │ │ ││├┤  ││  ║║║├─┤│││├┤ └─┐
+  // ╚═╝┴ └─┴  ┴└─└─┘└─┘└─┘┴└─┘┘└┘  ╚═╝┴ └─└─┘┴─┘└─┘─┴┘└─┘─┴┘  ╝╚╝┴ ┴┴ ┴└─┘└─┘
+  // All lines should show errors
+  
+@UnitTest__Excluded_Names_In_Expressions
+
+  // Keywords are excluded in expressions
+  _error = a + for 
+  _error = a + to 
+  _error = a + endfor 
+  _error = a + while 
+  _error = a + endwhile 
+  _error = a + repeat 
+  _error = a + until 
+  _error = a + if 
+  _error = a + else 
+  _error = a + elseif 
+  _error = a + endif 
+
+  // Event names are excluded  
+  _error = a + OnLoad 
+  _error = a + Description 
+  
+  // Commands are excluded  
+  _error = a + ShowLayout 
+
+  // Verbal operators are excluded  
+  _error = a + and 
+  _error = a + or 
+  _error = not and 
+  _error = not or 
+
+  _error = a + not not 
+  
+@End 
+
+  // ================================================================
+  //  ╦ ┌┐┌┌─┐   ┬   ╔╦╗┌─┐┌─┐  ┌─┐┬─┐┌─┐  ╔═╗┌─┐┌─┐┌─┐┬┌─┐┬  
+  //  ║ ││││    ┌┼─   ║║├┤ │    ├─┤├┬┘├┤   ╚═╗├─┘├┤ │  │├─┤│  
+  //  ╩ ┘└┘└─┘  └┘   ═╩╝└─┘└─┘  ┴ ┴┴└─└─┘  ╚═╝┴  └─┘└─┘┴┴ ┴┴─┘
+  // In the Moazic manual, both Inc and Dec were only stated as commands,
+  // not returning a value - but tests prooved that they indeed also
+  // work as functions. This implied a lot of changes in my syntax 
+  // definition, which is tested here. 
+  //
+  // As Inc and Dec both share a code-path, only one needs to be tested
+@UnitTest_IncDec_Are_Special
+  // Used as command
+  Inc                                 // err without param
+  Inc a                               // valid with 1 param
+  Inc a,10                            // valid with 2 param
+  Inc a,10, err                       // err with >2 params
+  
+  // Used as function
+  _error = Inc                        // err without param
+  _valid = Inc a                      // valid with 1 param
+  _valid = Inc a,b                    // valid with 2 params
+  _error = Inc a,b,c.                 // err with >2 params
+  
+  // Used in assignments
+  Inc = 10                            // err as lvalue
+  for Inc = 0 to 10                   // err as for-lvalue
+  endfor  
+  
+  if (Inc a) = 10                     // valid with side fx of incementing
+  endif
+  
+  a[Inc ptr] = 10                     // valid with side fx of prae-incement
+  a[Inc ptr] = 20       
+  
+  b[ptr] = 10 + 0*(Inc ptr)           // valid with side fx of post-increment
+  b[ptr] = 20 + 0*(Inc ptr)
+@End
+
+  // ================================================================
+  // ╔═╗┌─┐┬─┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┬─┐  ╔═╗┬ ┬┌─┐┌─┐┬┌─┌─┐
+  // ╠═╝├─┤├┬┘├─┤│││├┤  │ ├┤ ├┬┘  ║  ├─┤├┤ │  ├┴┐└─┐
+  // ╩  ┴ ┴┴└─┴ ┴┴ ┴└─┘ ┴ └─┘┴└─  ╚═╝┴ ┴└─┘└─┘┴ ┴└─┘
+  // There are 16 parameter variants for commands, 7 parameter variants
+  // for functions and 3 parameter variants for string functions
+  // 
+  // All of the Mozaic commands and functions map to either one of these 
+  // variants, so it is sufficient to test only one of these functions of
+  // each variant for wrong parameter usage. 
+  // 
+  // For optional params test all cases, otherwise only check errors.
+
+    // ╔═╗┌─┐┌┬┐┌┬┐┌─┐┌┐┌┌┬┐  ╔═╗┌─┐┬─┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┬─┐┌─┐
+    // ║  │ │││││││├─┤│││ ││  ╠═╝├─┤├┬┘├─┤│││├┤  │ ├┤ ├┬┘└─┐
+    // ╚═╝└─┘┴ ┴┴ ┴┴ ┴┘└┘─┴┘  ╩  ┴ ┴┴└─┴ ┴┴ ┴└─┘ ┴ └─┘┴└─└─┘
+
+@UnitTest__Command_Parameter_Checks
+
+  // C01: Commands without parameter
+  StartTimer a                    // err with param
+    
+  // C02_Commands with single parameter
+  ReceiveSysex                    // err without param
+  ReceiveSysex     a,b            // err with >1 param
+
+  // C03: Commands with  two parameter
+  SetAUParameter                  // err without param
+  SetAUParameter  a               // err with 1 param
+  SetAUParameter  a,b,c           // err with >2 params
+
+  // C04: Commands with three parameter
+  SetNoteState                    // err without param
+  SetNoteState a                  // err with 1 param
+  SetNoteState a,b                // err with 2 params
+  SetNoteState a,b,c,d            // err with >3 params
+
+  // C05: Commands with five parameter
+  SetupLFO                        // err without param 
+  SetupLFO a                      // err with 1 param
+  SetupLFO a,b                    // err with 2 params
+  SetupLFO a,b,c                  // err with 3 params
+  SetupLFO a,b,c,d                // err with 4 params
+  SetupLFO a,b,c,d,e,f            // err with >5 params
+
+  // C06: Commands with N parameters
+  CustomScale                     // valid without param
+  CustomScale a                   // valid with 1 param
+  CustomScale a,b                 // valid with 2 params
+  CustomScale a,b,c               // valid with 3 params
+  CustomScale a,b,c,d             // valid with 4 params
+  CustomScale a,b,c,d,e           // valid with 5 params
+  CustomScale a,b,c,d,e,f         // valid with 6 params
+  CustomScale a,b,c,d,e,f,g       // valid with 7 params
+
+  // C07: Commands with  single optional parameter
+  SendMIDIThru                    // valid without param
+  SendMIDIThru     a              // valid with 1 param
+  SendMIDIThru     a, b           // err with >1 param
+
+  // C08: Commands with  single parameter + one optional
+  SendMIDIThruOnCh a              // valid with 1 param
+  SendMIDIThruOnCh a,b            // valid with 2 params
+  // ----- 
+  SendMIDIThruOnCh                // err without param
+  SendMIDIThruOnCh a,b,c          // err with >2 params
+
+  // C09: Commands with  two parameter + one optional
+  SendMIDIPitchbend a,b           // valid with 2 params
+  SendMIDIPitchbend a,b,c         // valid with 3 params
+  // ----- 
+  SendMIDIPitchbend               // err without param
+  SendMIDIPitchbend    a          // err with 1 param
+  SendMIDIPitchbend    a,b,c, d   // err with >3 params
+
+  // C10: Commands with  two parameter + upto two optional
+  SendMIDIOut   a,b               // valid with 2 params
+  SendMIDIOut   a,b,c             // valid with 3 params
+  SendMIDIOut   a,b,c,d           // valid with 4 params
+  // ----- 
+  SendMIDIOut                     // err without param
+  SendMIDIOut   a                 // err with 1 param
+  SendMIDIOut   a,b,c,d,e         // err with >4 param
+
+  // C11: Commands with  two parameter + two optional group
+  SendSysex     a,b               // valid with 2 params
+  SendSysex     a,b,c,d           // valid with 4 params
+  // ----- 
+  SendSysex                       // err without param
+  SendSysex     a                 // err with 1 param
+  SendSysex     a,b,c             // err with 3 params
+  SendSysex     a,b,c,d,e         // err with >4 param
+
+  // C12: Commands with  three parameter + one optional
+  SendMIDIOut   a,b,c             // valid with 3 params
+  SendMIDIOut   a,b,c,d           // valid with 4 params
+  // ----- 
+  SendMIDIOut                     // err without param
+  SendMIDIOut   a                 // err with 1 param 
+  SendMIDIOut   a,b               // err with 2 param
+  SendMIDIOut   a,b,c,d,e         // err with >4 param
+
+  // C13: Commands with exactly one STRING or normal parmeter
+  PresetScale {a}                 // valid with string
+  PresetScale  a                  // valid with var
+  // -----   
+  PresetScale                     // err without param
+  PresetScale  a,b                // err with >1 params
+  PresetScale {a},b               // err with >1 params
+
+  // C14: Commands with one parameter and exactly one STRING
+  SetLFOType a,{str}              // valid with var, string
+  // ----- 
+  SetLFOType                      // err without param
+  SetLFOType a                    // err with only one param
+  SetLFOType a,                   // err with only one param
+  SetLFOType a,b                  // err with only two normal params
+  SetLFOType a,{str},c            // err with > 2 params
+
+  // C15: Commands with N parameters, including strings
+  // As Mozaic does string concatenation, there are N string allowed
+  Log                             // valid without param
+  Log a                           // valid with 1 param
+  Log a,b                         // valid with 2 params
+  Log a,b,{c}                     // valid with 3 params
+  Log a,{b},c,{d}                 // valid with 4 params
+  Log {a},b,{c},d,{e}             // valid with 5 params
+  // ----- 
+  Log {}                          // err empty string as in Mozaic
+
+  // C16: Commands with one parameter and N STRING (or normal)
+  // As Mozaic does string concatenation, there are N string allowed
+  LabelPad a,{b}                  // valid with var plus string
+  LabelPad a,b,{c},{d}            // valid with var plus N string
+  LabelPad a,b,d,d                // valid with var plus N var
+  // ----- 
+  LabelPad                        // err without param
+  LabelPad  a                     // err with 1 param
+  LabelPad {a},b                  // err with string as first param
+@End 
+
+
+    // ╔═╗┬ ┬┌┐┌┌─┐┌┬┐┬┌─┐┌┐┌  ╔═╗┌─┐┬─┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┬─┐┌─┐
+    // ╠╣ │ │││││   │ ││ ││││  ╠═╝├─┤├┬┘├─┤│││├┤  │ ├┤ ├┬┘└─┐
+    // ╚  └─┘┘└┘└─┘ ┴ ┴└─┘┘└┘  ╩  ┴ ┴┴└─┴ ┴┴ ┴└─┘ ┴ └─┘┴└─└─┘
+
+@UnitTest__Function_Parameter_Checks
+
+  // F01: Functions without parameter
+  _error = MIDIChannel   a            // err with param
+
+  // F02: Functions with  single parameter
+  _error = GetAUParameter             // err without param
+  _error = GetAUParameter  a,b        // err with >1 param
+
+  // F03: Functions with  two parameter
+  _error = GetNoteState               // err without param
+  _error = GetNoteState a             // err with only one param
+  _error = GetNoteState a,b,c         // err with >2 params
+
+  // F04: Function with three parameter
+  _error = Clip                       // err without param
+  _error = Clip a                     // err with 1 param
+  _error = Clip a,b                   // err with 2 params
+  _error = Clip a,b,c,d               // err with >3 params
+
+  // F05: Functions with four parameter
+  _error = GetXYMorphValue            // err without param
+  _error = GetXYMorphValue a          // err with 1 param 
+  _error = GetXYMorphValue a,b        // err with 2 params 
+  _error = GetXYMorphValue a,b,c      // err with 3 params
+  _error = GetXYMorphValue a,b,c,d,e  // err with >4 params
+
+  // F06: Functions with five parameter
+  _error = TranslateScale             // err without param
+  _error = TranslateScale  a          // err with 1 params
+  _error = TranslateScale  a,b        // err with 2 params
+  _error = TranslateScale  a,b,c,     // err with 3 params
+  _error = TranslateScale  a,b,c,d,   // err with 4 params
+  _error = TranslateScale  a,b,c,d,e,f// err with >5 params
+
+  // F07: Function with one optional parameter
+  _error = Inc                        // err without param
+  _valid = Inc a                      // valid with 1 param
+  _valid = Inc a,b                    // valid with 2 params
+  _error = Inc a,b,c.                 // Err with >2 params
+  
+  // F08: Function with upto two optional parameter
+  _error = Random                     // err without param
+  _error = Random a                   // err with 1 param
+  _valid = Random a,b                 // valid
+  // ----- 
+  _error = Random a,b,c               // err with >2 params
+
+  // F09: Function with  two parameter + two optional
+  _valid = TranslateCurve a,b         // valid with 2 params
+  _valid = TranslateCurve a,b,c,d     // valid with 4 params
+  // ----- 
+  _error = TranslateCurve             // err without param
+  _error = TranslateCurve a           // err with 1 param
+  _error = TranslateCurve a,b,c       // err with 3 params
+  _error = TranslateCurve a,b,c,d,e   // err with >4 params
+@End 
+
+    // ╔═╗┌┬┐┬─┐┬┌┐┌┌─┐  ╔═╗┬ ┬┌┐┌┌─┐┌┬┐┬┌─┐┌┐┌  ╔═╗┌─┐┬─┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┬─┐┌─┐
+    // ╚═╗ │ ├┬┘│││││ ┬  ╠╣ │ │││││   │ ││ ││││  ╠═╝├─┤├┬┘├─┤│││├┤  │ ├┤ ├┬┘└─┐
+    // ╚═╝ ┴ ┴└─┴┘└┘└─┘  ╚  └─┘┘└┘└─┘ ┴ ┴└─┘┘└┘  ╩  ┴ ┴┴└─┴ ┴┴ ┴└─┘ ┴ └─┘┴└─└─┘
+
+@UnitTest__String_Function_Parameter_Checks
+
+  // S01: String function without params
+  Log { },RootNoteName a, { }     // err with params
+  Log { },(RootNoteName a), { }     // err with params
+
+  // S02: String function with one optional param
+  Log { }, ScaleName              // valid without param
+  Log { },(ScaleName )            // valid without param
+  Log { },(ScaleName a)           // valid with 1 param
+  Log { },((ScaleName a))         // valid with 1 param double parenthesis
+  // ----- 
+  Log { },(ScaleName a, b)        // err with >1 param
+
+  // S03: String function with one plus one optional param
+  Log { },(NoteName a)            // valid with one param
+  Log { },(NoteName a,b)          // valid with two params
+  // ----- 
+  Log { },NoteName                // err without param
+  Log { },NoteName ,{ }           // err without param
+  Log { },(NoteName )             // err without param
+  Log { },(NoteName a,b,c)        // err with >2 params
+
+  // S04: Using strings or string function in 'non-string' 
+  // commands or functions
+  LatchPad a, {b}                 // err string as param
+  LatchPad a, NoteName a,b        // err string func as param
+  _f = Clip a, {b}, c             // err string as param
+  _f = Clip a, RootNoteName, c    // err string func as param
+
+@End 
+
+
+  // ================================================================
+  // ╦  ┌─┐┌─┐┌─┐┌─┐  ┌─┐┌┐┌┌┬┐  ╔═╗┌─┐┌┐┌┌┬┐┬┌┬┐┬┌─┐┌┐┌┌─┐┬  ┌─┐
+  // ║  │ ││ │├─┘└─┐  ├─┤│││ ││  ║  │ ││││ │││ │ ││ ││││├─┤│  └─┐
+  // ╩═╝└─┘└─┘┴  └─┘  ┴ ┴┘└┘─┴┘  ╚═╝└─┘┘└┘─┴┘┴ ┴ ┴└─┘┘└┘┴ ┴┴─┘└─┘
+  // A missing closing keyword for conditions and loops can only be 
+  // detected through restricted words in that context or by 
+  // reaching @End as any number other statements are allows 
+  // inside the constructs
+
+
+    // ╦ ╦╦ ╦╦╦  ╔═╗  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+    // ║║║╠═╣║║  ║╣   ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+    // ╚╩╝╩ ╩╩╩═╝╚═╝  ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+@UnitTest__WHILE_Statement_Checks
+
+  // Check 'missing closing' detection reaching other ending keywords
+
+  if a
+    while b
+      Log { }
+  endif          // err missing 'endwhile', different end keyword detected
+
+  repeat
+    while b
+      Log { }
+  until a        // err missing 'endwhile', different end keyword detected
+
+
+  for a = b to c 
+    while d
+      Log { }
+  endfor         // err missing 'endwhile', different end keyword detected
+
+
+  // Check missing or extra expression
+
+  while          // err missing 'while' expression
+    Log { }
+  endwhile a     // err illegal expression after 'endwhile'
+
+  // Check nested 'missing closing' detection 
+
+  if a 
+    while b
+      while c
+        Log { }
+    //endwhile
+    endwhile 
+  endif         // err missing 'endwhile' in nested WHILE
+
+@End 
+
+
+    // ╦═╗╔═╗╔═╗╔═╗╔═╗╔╦╗  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+    // ╠╦╝║╣ ╠═╝║╣ ╠═╣ ║   ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+    // ╩╚═╚═╝╩  ╚═╝╩ ╩ ╩   ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+@UnitTest__REPEAT_Statement_Checks
+
+  // Check 'missing closing' detection reaching other ending keywords
+
+  if a
+    repeat
+      Log { }
+  endif          // err missing 'until', different end keyword detected
+
+
+  while a
+    repeat
+      Log { }
+  endwhile       // err missing 'until', different end keyword detected
+
+
+  for a = b to c
+    repeat
+      Log { }
+  endfor         // err missing 'until', different end keyword detected
+
+
+  // Check missing or extra expression
+
+  repeat a       // err illegal expression after 'repeat'
+  until          // err missing 'until' expression
+
+  // Check nested 'missing closing' detection 
+
+  if a 
+    repeat
+      repeat
+        Log { }
+    // until b
+    until c
+  endif         // err missing 'until' in nested REPEAT
+@End 
+
+
+    // ╔═╗╔═╗╦═╗  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+    // ╠╣ ║ ║╠╦╝  ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+    // ╚  ╚═╝╩╚═  ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+@UnitTest__FOR_Statement_Checks
+
+  // Check 'missing closing' detection reaching other ending keywords
+  if a
+    for b = c to d
+      Log { }    
+  endif          // err missing 'endfor', different end keyword detected
+
+  repeat
+    for b = c to d
+      Log { }    
+  until a        // err missing 'endfor', different end keyword detected
+
+  while a
+    for b = c to d
+      Log { }      
+  endwhiLe       // err missing 'endfor', different end keyword detected
+
+
+  // Check missing or extra expression
+
+  for = b to c          // err missing lvalue variable
+    Log { }      
+  endfor
+
+  for div = b to c      // err bad lvalue variable (function name)
+    Log { }      
+  endfor
+
+  for random = b to c   // err bad lvalue variable (command name)
+    Log { }      
+  endfor
+
+  for NO = b to c       // err bad lvalue variable (buildin constant name)
+    Log { }      
+  endfor
+
+  for 123 = b to c      // err bad lvalue variable (number)
+    Log { }      
+  endfor
+
+  for a  b to c          // err missing 'equal' sign
+    Log { }      
+  endfor
+
+  for a = to c           // err missing 'start' expression
+    Log { }      
+  endfor
+
+  for a = b c            // err missing 'to' keyword
+    Log { }      
+  endfor
+
+  for a = b to           // err missing 'end' expression
+    Log { }      
+  endfor
+
+  for a = b to c
+    Log { }      
+  endfor d               // err illegal expression after 'endfor'
+
+  // Check nested 'missing closing' detection 
+
+  if a 
+    for b = c to d
+      for f = g to h
+        Log { }
+    //endfor
+    endfor
+  endif                 // err missing 'endfor' in nested FOR
+@End 
+
+
+    // ╦╔═╗  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+    // ║╠╣   ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+    // ╩╚    ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+@UnitTest__IF_Statement_Checks
+
+  // Check 'missing closing' detection reaching other ending keywords
+  while a
+    if b
+      Log { }
+  endwhile       // err missing 'endif', different end keyword detected
+
+  repeat
+    if b
+      Log { }
+    else
+      Log { }       
+  until a        // err missing 'endif', different end keyword detected
+
+  repeat
+    if b
+      Log { }
+    elseif c
+      Log { }       
+  until a        // err missing 'endif', different end keyword detected
+
+  for a = b to c
+    if d
+      Log { }
+  endfor         // err missing 'endif', different end keyword detected
+
+
+  // Check missing or extra expression
+
+  if             // err missing 'if' expression
+    Log { }
+  elseif         // err missing 'elseif' expression
+    Log { }
+  else  a        // err illegal expression after 'else'
+    Log { }
+  endif b        // err illegal expression after 'endif'          
+
+
+  // Control flow checks 
+  if a
+    Log { }
+  else
+    Log { }
+  elseif b       // 'elseif' after 'else'
+    Log { }
+  endif
+
+  if a
+    Log { }
+  else
+    Log { }
+  else           // Multiple 'else' 
+    Log { }
+  endif
+
+
+  // Check nested 'missing closing' detection 
+
+  while a
+    if b
+      Log { }
+      if d 
+        Log { }
+      endif
+  //endif 
+  endwhile      // err missing 'endif' in nested IF - if path
+
+  while a
+    if b
+      Log { }
+    else
+      if c 
+        Log { }
+      endif
+  //endif 
+  endwhile      // err missing 'endif' in nested IF - else path
+
+  while a
+    if b
+      Log { }
+    elseif c
+      if d 
+        Log { }
+      endif
+  //endif 
+  endwhile      // err missing 'endif' in nested IF - elseif path
+
+@End
+
+
+    // ╔═╗┌─┐┬  ┬    ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+    // ║  ├─┤│  │    ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+    // ╚═╝┴ ┴┴─┘┴─┘  ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+@UnitTest__CALL_Statement_Checks
+  @Call  MyEvent              // '@' in wrong place
+  Call MyEvent                // err missing @
+  Call @UserEvent  something  // err stuff after 'Call'
+@End 
+
+
+  // ╔═╗┌─┐┌─┐┬┌─┐┌┐┌┌┬┐┌─┐┌┐┌┌┬┐  ╔═╗┌┬┐┌─┐┌┬┐┌─┐┌┬┐┌─┐┌┐┌┌┬┐
+  // ╠═╣└─┐└─┐││ ┬││││││├┤ │││ │   ╚═╗ │ ├─┤ │ ├┤ │││├┤ │││ │ 
+  // ╩ ╩└─┘└─┘┴└─┘┘└┘┴ ┴└─┘┘└┘ ┴   ╚═╝ ┴ ┴ ┴ ┴ └─┘┴ ┴└─┘┘└┘ ┴ 
+
+@UnitTest__Assignment_Statement_Checks
+
+  a        // err missing equal sign and expression
+  
+
+  a =       // err missing expression
+
+  a[        // err missing expression in index and bracket and expression
+   
+
+  a[ b      // err missing closing bracket in index and expression
+   
+
+  a[ b ]    // err missing equal sign for indexed var
+
+  a[ b ] =  // err missing expression for indexed var
+
+  NO =      // err invalid lvalue (reserved name)
+
+  12 =      // err invalid lvalue (number)
+@End
+
+
+  // ╔═╗┬─┐┬─┐┌─┐┬ ┬  ╦┌┐┌┬┌┬┐┬┌─┐┬  ┬┌─┐┌─┐┌┬┐┬┌─┐┌┐┌
+  // ╠═╣├┬┘├┬┘├─┤└┬┘  ║││││ │ │├─┤│  │┌─┘├─┤ │ ││ ││││
+  // ╩ ╩┴└─┴└─┴ ┴ ┴   ╩┘└┘┴ ┴ ┴┴ ┴┴─┘┴└─┘┴ ┴ ┴ ┴└─┘┘└┘
+
+@UnitTest_Array_Initialization
+
+  valid   = []                            // valid
+  valid[] = []                            // valid in Mozaic
+  valid   = [ 1 , 2 , 3 ]                 // Valid
+  valid   = [ a , (b+2) , c[3+d[0] ]+4 ]  // Valid
+  valid   = [ a[1] , b[ c[2] ], d ]       // Valid 
+
+  // Error checks in asignment
+  a = [         // err missing closing bracket
+   
+  a = [ 1       // err missing closing bracket
+
+  a = [ 1 ,     // err missing second expression
+   
+  a = [ 1 , 2   // err missing closing bracket
+    
+
+  a = [ a[0]           // err missing closing bracket
+  a = [ a[1] , b[2],   // err missing third expression
+  a = [ a[ b[2] , d ]  // err invalid comma
+   
+@End
+
+
+  // ================================================================
+  // ╔═╗─┐ ┬┌─┐┬─┐┌─┐┌─┐┌─┐┬┌─┐┌┐┌┌─┐
+  // ║╣ ┌┴┬┘├─┘├┬┘├┤ └─┐└─┐││ ││││└─┐
+  // ╚═╝┴ └─┴  ┴└─└─┘└─┘└─┘┴└─┘┘└┘└─┘
+
+@UnitTest__Expression_Checks
+
+  // The syntax parser follows the recursive math syntax of Mozaic
+  //   expression : term 
+  //   term       : number
+  //   term       : variable
+  //   term       : function [term [, term]... ]
+  //   term       : term operator term 
+  //   term       : ( term )
+  //   variable   : name [ '[' expression ']' ]
+  // to validate expressions. 
+
+  // Numbers
+  _valid = 12                // valid integer number
+  _valid = 0xA9              // valid hex number
+  _valid = 12.               // valid number in Mozaic
+  _valid = 12.345            // valid float number
+  // ----- 
+  _valid = 0xA9k             // err invalid hex number
+  _error = 12a               // err bad number
+  _error = 12.a              // err bad number
+  _error = 12.3a             // err bad number
+
+  // Variables
+  _valid = _azAZ09           // valid var name 
+  _valid = _azAZ09[12+_expr] // valid var name   
+  // ----- 
+  _error = _az?AZ            // err invalid char in name
+  _error = array[a,b]        // err invalid expression in index
+
+  // functions
+  _valid = HostBar
+  _valid = YES                    // YES, NO, TRUE and FALSe are 'functions' 
+  _valid = TRUE                   //   without params
+  _valid = GetKnobValue knob      // valid func with parmeter
+  _valid = Clip val,min,max
+
+  // operators  
+  _valid = a + b - c * d / e % f  // valid arithmetic
+  _valid = a & b | c ^ d          // valid bitwise
+  _valid = a and b or c           // valid logic
+  _valid = a = b <> c             // valid comparison
+  _valid = a < b > c <= d >= e    // valid comparison    
+  _valid = -a                     // valid unary -
+  _valid = not a                  // valid unary not
+  // ----- 
+  _error = termA termB            // err missing operator
+  _error = termA + + termB        // err double operator
+
+
+  // parenthesis
+  _valid = (term)            // valid prenthesis
+  _valid = (a+(b+(c)))       // valid prenthesis
+  // ----- 
+  _error = (term             // err missing closing parenthesis
+  _error = ()                // err invalid empty parenthesis
+  _error = (a+(b+() ))       // err invalid nested empty parenthesis
+  _error = (a+(b+((((((      // err missing several parenthesis
+  _error = a+b) + c          // err extra closing parenthesis
+
+  _error = (a+(b+((((((
+   
+
+  // All tests are done recursively for expressions
+
+  a = ( alpha ( *4  ) 
+    // err missing operator before prenthesis
+
+  var[ _i +  _cnt%3 ) ] = A * ( ( c ^ 7 ) | 0x1247) 
+    // err unexpected closing parenthesis
+
+  a = b + ( c * d[] + (Random 1,GetKnobValue knob)) 
+    // err empty index brackets
+
+  global42[ _idx ] = b + (c + -d + (e + f))) 
+    // err extra closing parenthesis
+
+  for _i = (a + b % 4) to c + (Round ) * Sin x 
+    // err missing parameter to round
+    Log { }
+  endfor
+@End 
+
+    // ╦ ╦┌┐┌┌─┐┬─┐┬ ┬  ╔═╗┬ ┬┌┐┌┌─┐┌┬┐┬┌─┐┌┐┌┌─┐
+    // ║ ║│││├─┤├┬┘└┬┘  ╠╣ │ │││││   │ ││ ││││└─┐
+    // ╚═╝┘└┘┴ ┴┴└─ ┴   ╚  └─┘┘└┘└─┘ ┴ ┴└─┘┘└┘└─┘
+
+@UnitTest__Unary_Expression_Functions
+  a = -b         // valid unary - without spaces
+  a = -      b   // valid unary - allows spaces as in Mozaic
+
+  // Unary function followed by operator followed by unary function
+  a =  -  b  -   -  c
+  a = NOT b and NOT c
+
+  // In Mozaic unary NOT and - are not allowed to be
+  // directly followed by another unarys.
+
+  a = NOT - b    // err unary directly follows unary
+  a = NOT NOT b  // err unary directly follows unary
+  a = - -   b    // err unary directly follows unary
+  a = - NOT b    // err unary directly follows unary
+
+  a = NOT (-b)   // valid: parenthesis work
+  a = NOT (NOT b)// valid: parenthesis work
+  a = - (-b)     // valid: parenthesis work
+  a = - (NOT b)  // valid: parenthesis work
+@End
+
+
+
+    // ╔╦╗┬┌─┐┌─┐┌─┐┬  ┬  ┌─┐┌┐┌┌─┐┌─┐┬ ┬┌─┐  ╔═╗┬ ┬┌─┐┌─┐┬┌─┌─┐
+    // ║║║│└─┐│  ├┤ │  │  ├─┤│││├┤ │ ││ │└─┐  ║  ├─┤├┤ │  ├┴┐└─┐
+    // ╩ ╩┴└─┘└─┘└─┘┴─┘┴─┘┴ ┴┘└┘└─┘└─┘└─┘└─┘  ╚═╝┴ ┴└─┘└─┘┴ ┴└─┘
+
+err Anything outside mozaic events, except comments
+
+// Anything after event name is flagged invalid 
+@UnitTest__Miscelaneous_Checks stuff after name // comment
+
+  // All characters outside _ a-z A-Z or // are illegal
+  // as there are no commands starting with these chars
+  0 
+  § 
+  + 
+  ) 
+  = 
+  ? 
+
+  // Restricted keywords are only allowed in context
+  endif 
+  else 
+  elseif 
+  endfor 
+  endwhile 
+  until 
+  to 
+  no 
+  yes 
+  true 
+  false 
+
+  // Empty strings
+  Log {} 
+
+  // Non-terminated string 
+  Log {
+  Log { Missing closing bracket 
+    
+
+  // Closing string bracket inside string 
+  Log {  } }       // 
+  Log {  { } }     // Opening '{' is valid
+
+
+  // Multiple missing brackets still recover to a single error
+  if YES
+    err[a[a[a[a[
+    Log { }
+    err = ((((((((
+    Log { }
+  endif
+
+  // Unknownly using function names as variable names
+  div = 10   // DIV  is a reserved function name with 2 params
+  // The missing params can lead to followup errors:
+  if (index + seqEnd + div) <= 383 
+    for i = (index + offset + div) to (index + offset + div + seqEnd) 
+      Call @MakeSeq
+    endfor
+  endif
+    
+  // Expressions with/without indexed variables both flag invalid 
+  // chars behind the expession
+  if a = b ? 
+  endif
+  
+  if a[b] = c[d] ! 
+  endif
+@End
+
+
+// ╔═╗┬─┐┬─┐┌─┐┬─┐  ╔═╗┬─┐┌─┐┌─┐┌─┐┌─┐┌─┐┌┬┐┬┌─┐┌┐┌
+// ║╣ ├┬┘├┬┘│ │├┬┘  ╠═╝├┬┘│ │├─┘├─┤│ ┬├─┤ │ ││ ││││
+// ╚═╝┴└─┴└─└─┘┴└─  ╩  ┴└─└─┘┴  ┴ ┴└─┘┴ ┴ ┴ ┴└─┘┘└┘
+// Test how error-highlighting reacts to different scenarios
+// regarding spaces, comments and empty lines
+
+@UnitTest__Error_Propagation
+  
+  // If there is a comment on the erroneous line
+  a=      // >2 spaces infront of comment, error-highlights second last
+  a= //      one space infront of comment , error-highlights single space
+  a=//       direct comment, error-highlights comment keyword
+
+  // Error on next line, if there is no comment 
+  a=   
+  Log { }  // error-highlights 'two spaces' on next non-empty line
+
+  // Error on next on-empty line (with empty line)
+  a=   
+
+  Log { }  // error-highlight skipped empty line
+
+
+  // Error on next line, but only one space available
+  a=
+ Log { }
+
+  // Error on next line, but not a even single space available
+  a=
+Log { }   // Stripe-invalidate line as last resort reaction
+
+  // Error followed by @End line, highlights the @End
+    a=
+@End 
+
+// ╔═╗┌┬┐┌┬┐┬┌┬┐┬┌─┐┌┐┌┌─┐┬    ╔═╗┌─┐┌─┐┌┬┐┬ ┬┬─┐┌─┐┌─┐
+// ╠═╣ ││ │││ │ ││ ││││├─┤│    ╠╣ ├┤ ├─┤ │ │ │├┬┘├┤ └─┐
+// ╩ ╩─┴┘─┴┘┴ ┴ ┴└─┘┘└┘┴ ┴┴─┘  ╚  └─┘┴ ┴ ┴ └─┘┴└─└─┘└─┘
+
+@UnitTest__Additional_Features
+  // The language parser supports three different line highlight commands
+  // that can be used to mark code parts or sections to make them easier
+  // to find while scrolling.
+  
+  //!   !  directly after a comment starts a red highlight
+  //!
+  //>   >  directly after a comment starts a blue highlight
+  //>
+  //:   :  directly after a comment starts a purple highlight
+  //:
+
+  // To end the highlighting before EOL, use //   
+       //:                            //
+       //:      Color Block.          //
+       //:                            //
+  
+  // Used in function comments, the text style is yellow italics.
+@End
+
+  // Outside of functions, the color highlights use white italics text
+       //!  Red  //> Blue  //: Purple //
+
+  
+// ╔╦╗┬┌─┐┌─┐┌─┐┬─┐┌─┐┌┐┌┌─┐┌─┐┌─┐  ╔╦╗┌─┐  ╔╦╗┌─┐┌─┐┌─┐┬┌─┐
+//  ║║│├┤ ├┤ ├┤ ├┬┘├┤ ││││  ├┤ └─┐   ║ │ │  ║║║│ │┌─┘├─┤││  
+// ═╩╝┴└  └  └─┘┴└─└─┘┘└┘└─┘└─┘└─┘   ╩ └─┘  ╩ ╩└─┘└─┘┴ ┴┴└─┘
+
+@UnitTest__Differences_To_Mozaic
+
+  // In Mozaic the empty array bracket denote the first entry and
+  // is valid. I decided to flag this as error, but still allow the 
+  // notation in lvalues
+  _error   = b[] 
+
+  _valid[] = 0
+
+  // Using function names as variable names works in Mozaic, but 
+  // the original function is no longer available. Mozic doesn't 
+  // issue a warning
+  div      = 10   // The div function is no longer available
+  lastKnob = 0    // 'Kills' LastKnob function needed in @OnKnobChange
+  
+  
+  // Mozaic skips empty parameters which allows multiple commas
+  // The Parser still flags these as errors, since empty 
+  // expressions make no sense and the comma can be deleted
+  Log ,,,,,a,,,b,{works in Mozaic}     
+  LabelKnobs ,,,,,,,,,a,{Mozaic} 
+  _f = TranslateScale , chKnob, 0,127, 0,15 
+
+  // Mozaic allows any non-char as parameter delimiter after a string parameter
+  Labelknobs {a=} . a , { b=} @ b
+  
+  // For string functions with parameter, Moazic needs parenthesis, but
+  // this parser feeds extra parameters to the calling function 
+  Log { },NoteName note,opt, second_param_to_log  // Should err
+  Log { },ScaleName scale,   second_param_to_log  // Should err   
+
+  // Mozaic uses default parameter values for many of its functions,
+  // so omitting non optional parameters does not throw an error
+  a = Random       // Mozaic: Returns random between  0 and 127
+  a = GetKnobValue // Mozaic: Returns value of knob 0
+  
+  if a 
+  else if b  // Mozaic stops parsing after the 'else' with a space behind
+  endif 
+  
+  if a 
+  else ,.,o3432 // Moazic: a valid else, doesn't care whats there
+  endif 
+  
+  Log {  {   } // Mozaic allows for '{'' inside strings
+  
+  SetTimerInterval 
+  // Missing param with carry-over
+@End
+
+
+// ╦ ╦┌┐┌┌┬┐┌─┐┌┬┐┌─┐┌─┐┌┬┐┌─┐┌┬┐  ╔═╗┬─┐┬─┐┌─┐┬─┐┌─┐
+// ║ ║│││ ││├┤  │ ├┤ │   │ ├┤  ││  ║╣ ├┬┘├┬┘│ │├┬┘└─┐
+// ╚═╝┘└┘─┴┘└─┘ ┴ └─┘└─┘ ┴ └─┘─┴┘  ╚═╝┴└─┴└─└─┘┴└─└─┘
+
+@UnitTest__Undetected_Errors
+
+  // Some function have lvalues as parameter, but the 
+  // parser does'nt check that (yet).
+  // A fix would need 4 new command variants
+
+  FillArray 12, 0,  100     // First param of 2 + 1opt need to be lvalue
+  CopyArray 12, 34, 100     // First two params of 2+1opt need to be lvalue 
+  SendSysex 12, 34, 56, 78  // First param of 2 + 2opt
+  ReceiveSysex 12           // First param of 1
+
+  // Things not possible to detect with this validator:
+  // - Mozaic keeps track of uninitialzed variables
+  // - Mozaic limits the number of variables to 256
+  // - Mozaic limits number of user events to 80
+
+// err missing terminal @End is NOT detected.

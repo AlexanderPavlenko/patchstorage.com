@@ -1,0 +1,326 @@
+@Description
+  This 'script' is the documentation of the Mozaic language plugin for
+  code text editors. It supports syntax highlighting, jump markers and
+  implements a full Mozaic language validator and syntax checker.
+  
+  The Mozaic.sublime3-syntax parser is supported by Textastic IOS/Mac
+  and the Sublime 3 code text editor on Windows, OS X and Linux. 
+
+  Chapters
+  ========
+  - General Information
+  - Example scripting and styling
+  - How do errors look like
+    - Something is missingq
+    - Something unexpected
+    - Control flow errors
+@End 
+
+// ╔═╗┌─┐┌┐┌┌─┐┬─┐┌─┐┬    ╦┌┐┌┌─┐┌─┐┬─┐┌┬┐┌─┐┌┬┐┬┌─┐┌┐┌
+// ║ ╦├┤ │││├┤ ├┬┘├─┤│    ║│││├┤ │ │├┬┘│││├─┤ │ ││ ││││
+// ╚═╝└─┘┘└┘└─┘┴└─┴ ┴┴─┘  ╩┘└┘└  └─┘┴└─┴ ┴┴ ┴ ┴ ┴└─┘┘└┘
+
+@Description
+  Highligthing
+  =============
+  Colorization follows defined rules, there are different colors 
+  and styles for:
+   - Constants and numbers
+   - Variables
+   - Arithmetic or logic operations and parenthesis
+   - Control keywords, assignment and array initialization statements
+   - Mozaic buildin events, commands, functions and constants
+   - User events
+   - Comments (different inside and outside of events)
+   - Strings and description
+   
+  Jump Markers
+  ==============
+  All defined events of a script are listed as jump markers. Mozaic 
+  events get a different icon than user defined events.
+  
+  CodeCompletion
+  ==============
+  Start typing and Textastic will show a popup of completions depending
+  on the current context. There are different completions outside or 
+  inside events, inside IF statements or in expressions etc.
+  
+  The completion list updates according to the typed characters, one 
+  can also navigate in longer completion lists using the the up 
+  and down arrow keys or scroll using touch. Using the arrow key will 
+  show a highlight on the current selected completion, the tab key
+  or finger press will add the completion. If no highlight is shown,
+  the tab key will add the topmost completion.  
+  
+  Parameters snippets are marked with triangle carets. Entering a snippet 
+  by pressing the tab key selects the snippet and typing something new 
+  replaces the whole snippet. 
+  Navigate between snippets using tab and shift tab key. A final press 
+  of the tab key jumps to the end position of that code completion.
+  
+  Example: 
+    Inside an event block (like @OnLoad) typing 'f' will show the completion 
+    popup containing a list with 'FillArray, FlashPad, FlashUserLed and for'.     
+    Typing 'o' will redurce that list to 'for'. Typing 'tab' will add 
+    this completion.
+
+    The 'for' completion contains snippets for the variable name, start and
+    end value and adds the 'endfor' - all of them marked by triangle carets.
+    
+    The first snippet for the variable name is automatically selected, 
+    typing something will replace the name. 
+    Upon finishing the name, press 'tab' to step to the start value snippet.
+    Either change the value or press 'tab' to step the the end value to
+    edit its snippet. (BTW 'shift tab' steps back to the previous snippet)
+    Using 'tab' at the end value will position the cursor inside the
+    for statement with correct indentation.
+    
+      
+  Validation
+  ==============
+  Syntax errors are marked by highlighting either spaces or text:
+  
+  - Omissions are marked in the beginning of the next non-empty line or 
+      just before a comment, if the line contains one      
+  - Unexpected or invalid words or characters are directly highlighted  
+  - Control flow errors are detected and highlight the unexpected 
+      flow-ending keyword.
+
+  Special feature when using Sublime 3:
+    Place the cursor in front of the first highlighted char and 
+    select Tools/Developer/Show Scope Name (or Shift-Ctrl-Alt-P) 
+    to show the current parser context - in many cases, there is 
+    a _SYNTAX_ERROR: context describing the detected problem
+@End
+
+// ╔═╗─┐ ┬┌─┐┌┬┐┌─┐┬  ┌─┐  ╔═╗╔═╗┬─┐┬┌─┐┌┬┐┬┌┐┌┌─┐
+// ║╣ ┌┴┬┘├─┤│││├─┘│  ├┤   ╚═╗║  ├┬┘│├─┘ │ │││││ ┬
+// ╚═╝┴ └─┴ ┴┴ ┴┴  ┴─┘└─┘  ╚═╝╚═╝┴└─┴┴   ┴ ┴┘└┘└─┘
+
+// ========================================================================
+// Comments between mozaic events get a different color than inside events 
+
+@OnLoad                  // All Mozaic buildins get the same color
+  // Variables
+  varName      = 0       // mixed case names uses normal text font and color
+  global42[34] = 42      // mozaic globals are shown in bold and different color
+  
+  // Variables styling using special first chars and capitalization
+  CONST        = 12.3    // all uppercase names denote a constant
+  _localVar    = 0x90    // start with underscore and lowercase to denote 'local vars' in italic 
+  gDelay       = 10      // start with lowercase g and capital letter to denote a global
+  pChannel     = 10      // start with lowercase p and capital letter to denote a parameter
+  
+  // Expressions
+  a = 10 * (b + c%4 )    // Operators and parenthesis
+  a = b = c              // Left '='' is assignment, right '='' is operator
+
+  // Mozaic functions and Moazaic constants
+  _bar         = Hostbar // The parser knowns all mozaic events, commands, 
+  _logic       = NO      // functions and constants
+  
+  // Backet colors
+  a = [1,2,3,4]          // Array initialization uses 'keyword' color
+  b = a[2]               // Index brackets get operator colors  
+@End
+
+//> Use comment line highlights to visually structure the code
+
+
+@UserEvent               // User events have a different color
+  ShowLayout 2           // The parser knows the number of parameters
+  LabelKnob 0, {Knob}    // and knows which function allow string parameters
+
+  // Complex expressions including Mozaic functions and parenthesis nesting
+  a = b + ( c * d[21] + (Random 1,10))
+
+  //         The unary - is displayed a little bit bolder than the minus
+  a = - b - c
+
+  // Parenthesis around string function get 'string' color, they differ
+  // from the arithmetic parenthesis
+  Log {  },( RootNoteName ) ,{ },(( ScaleName scale+2 ))
+  Log {  },( var ) ,{ }
+
+
+  // All expressions, even complex ones are validated
+
+  DATA_TABLE = [1,2, (12*a+( b[c*2])) ]
+
+  _idx  = _counter and NOT (DATA_TABLE[_num] = 4)
+  
+  var[ _i + ( _cnt%3 ) ] = A * ( ( c ^ 7 ) | 0x1247)
+@End
+
+//>
+
+@OnShiftDown // Examples of nested control structures, mozaic commands & functions
+
+  for a = b to c
+    // Mozaic functions inside condition expressions
+    if a <> Clip LastPadVelocity, 0, (Random b,(99+Abs c) )
+      repeat 
+        Log {Nested control structures}
+      until d
+    else
+      while e
+        Log {String functions },(NoteName f,YES),{ - },RootNoteName,{  },(ScaleName g)
+        LatchPad 0,2
+        SetKnobValue a, b
+      endwhile
+    endif
+  endfor
+  
+  sHowlAyOUT 2                            // Keywords are case insensitive 
+  wHiLe (inv < 4) AND NOT sHifTpreSseD
+      inv = GetNoteState a, b
+  EnDwhILe
+  
+  // The latest version features //! red //   //: purple // and //> blue // comment highlights
+@End
+
+
+// =================================================================
+// ╦ ╦┌─┐┬ ┬  ┌┬┐┌─┐  ╔═╗┬─┐┬─┐┌─┐┬─┐┌─┐  ┬  ┌─┐┌─┐┬┌─  ┬  ┬┬┌─┌─┐
+// ╠═╣│ ││││   │││ │  ║╣ ├┬┘├┬┘│ │├┬┘└─┐  │  │ ││ │├┴┐  │  │├┴┐├┤ 
+// ╩ ╩└─┘└┴┘  ─┴┘└─┘  ╚═╝┴└─┴└─└─┘┴└─└─┘  ┴─┘└─┘└─┘┴ ┴  ┴─┘┴┴ ┴└─┘
+
+
+    // ╔═╗   ╔═╗┌─┐┌┬┐┌─┐┌┬┐┬ ┬┬┌┐┌┌─┐  ┬┌─┐  ╔╦╗┬┌─┐┌─┐┬┌┐┌┌─┐
+    // ╠═╣ : ╚═╗│ ││││├┤  │ ├─┤│││││ ┬  │└─┐  ║║║│└─┐└─┐│││││ ┬
+    // ╩ ╩   ╚═╝└─┘┴ ┴└─┘ ┴ ┴ ┴┴┘└┘└─┘  ┴└─┘  ╩ ╩┴└─┘└─┘┴┘└┘└─┘
+
+@How_Syntax_Errors_Are_Shown
+  
+  // If 'something is missing (like an expected expression or too few parameters
+  // to a command or function), this error is either displayed by highlighting
+  // a space before the comment of the same line or the first two spaces in the 
+  // next non-empty line:
+
+  // Comments on erroneous line:
+    a=      // >2 spaces infront of comment, error-highlights second last
+    a= //      one space infront of comment , error-highlights single space
+    a=//       direct comment, error-highlights comment keyword
+
+  // No comment on erroneous line:
+    a=   
+    Log { }  // error-highlights 'two spaces' on next non-empty line
+
+
+    a=   
+
+    Log { }  // error-highlight skipped empty line
+
+
+    a=
+ Log { }     // error-highlights 'single space' if only one space is available
+ 
+
+    a=
+@End         // error-highlights '@End' if nothing of the above was found
+//              The @End is still interpreted, as you can notice by the
+//              'outside' comment color.
+
+
+@Display_of_Syntax_Errors
+
+  // In case there is something right at the start of the next line
+  // the last resort to flag the error is to invalidate the whole line 
+  // shown by striped text display:
+    a =
+Log {This line is striped to show invalidation}
+
+  // This whole line invalidation may cause follow-up errors, if one 
+  // of the control-statements was invalidated.  Striping should not 
+  // happen that often, as most scripts use indentation.
+
+
+
+  // Textastic on IOS has the unfortunate characteristic that 
+  // error-highlights of the last charachter of a line are extended 
+  // to the right edge of the screen:
+  
+  $
+  
+  // Same error with a space a the end:
+  $ 
+  
+  // If the parser would highlight an error right in the first char or space
+  // after the error is detected, this would lead to a very 'flashy' experience.
+  // For instance when typing an assignemt, there will be errors (= missing,
+  // expression missing, operand missing etc) until the whole statement is finished.
+  // And one would quite often type a space after there is a space at the end 
+  // since When typing in new code (for instance an assignment) this flash/unflash
+  // 'highlight of the whole line' would happen quite often whenever a
+  // space is typed at the current end since the assignment expression is 
+  // not finished. Whenever the rest of the line is empty, the error can
+  // only be displayed in the spaces of the start of one of the next lines.
+  // 
+  // Full-line flashing and next line error display would alternate during
+  // typing of new lines - thats why i decided to prefer highlighting on the
+  // next line if possible.
+
+@End
+
+
+    // ╔╗    ╔═╗┌─┐┌┬┐┌─┐┌┬┐┬ ┬┬┌┐┌┌─┐  ╦ ╦┌┐┌┌─┐─┐ ┬┌─┐┌─┐┌─┐┌┬┐┌─┐┌┬┐
+    // ╠╩╗ : ╚═╗│ ││││├┤  │ ├─┤│││││ ┬  ║ ║│││├┤ ┌┴┬┘├─┘├┤ │   │ ├┤  ││
+    // ╚═╝   ╚═╝└─┘┴ ┴└─┘ ┴ ┴ ┴┴┘└┘└─┘  ╚═╝┘└┘└─┘┴ └─┴  └─┘└─┘ ┴ └─┘─┴┘
+
+
+@Display_of_Unexpected_Chars_Or_Reserved_Words
+  // If the parser detects something invalid, either the offending 
+  // character or word is flagged and the rest of the line is 
+  // invalidated to the its comment shown by the inverse line background
+  // 
+
+  for HostBar = 0 to 10    // Hostbar is not allowed as 'for' counter
+    Log { }
+  endfor
+
+  a = a a     // Found a variable instead of the expected operator
+
+  a = ( )     // Empty backets are not allowed
+
+  a = 12 + b, // Comma not allowed in expression
+
+  div = 200   // Div is a reserved function name
+
+  a = TranslateScale _val, 0,127, 0,10, 2  // Too many parameters
+@End 
+
+
+    // ╔═╗   ╔═╗┌─┐┌┐┌┌┬┐┬─┐┌─┐┬    ╔═╗┬  ┌─┐┬ ┬  ╔═╗┬─┐┬─┐┌─┐┬─┐┌─┐
+    // ║   : ║  │ ││││ │ ├┬┘│ ││    ╠╣ │  │ ││││  ║╣ ├┬┘├┬┘│ │├┬┘└─┐
+    // ╚═╝   ╚═╝└─┘┘└┘ ┴ ┴└─└─┘┴─┘  ╚  ┴─┘└─┘└┴┘  ╚═╝┴└─┴└─└─┘┴└─└─┘
+
+
+@Display_of_Control_Flow_Errors
+
+  // Controll statements with faulty expression still start
+  // their normal control flow to not produce follow-up errors 
+
+  if                      // Missing expression
+    Log { }
+  endif
+
+  for _idx = 12x to 10    // Bad number
+  endfor
+
+
+  // If a wrong closing keyword is detected before the current 
+  // control flow is closed, the detected keyword is error highlighted
+  if a
+    while b
+      Log { }
+  endif
+
+  // The parser starts reading from the top, first enters an IF control
+  // flow and then a WHILE control flow. That WHILE flow would end when
+  // reading ENDWHILE. But the parser found a different flow closing 
+  // statement: ENDIF which is flagged to mark the detected error.
+  // 
+  // Even though highlighted, the ENDIF still ends the IF flow to 
+  // to prevent follow-up errors.
+
+@End 

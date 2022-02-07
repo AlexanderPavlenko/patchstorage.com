@@ -5,6 +5,16 @@ require 'shellwords'
 require 'fileutils'
 require 'json'
 
+# @param dir [String] patches category
+def fetch_all(dir)
+  Dir.chdir(File.join(__dir__, dir)) do
+    File.open('index.json') do |index|
+      fetch JSON.load(index)
+      cleanup
+    end
+  end
+end
+
 # @param patches [Array<String>] URLs of the patch pages
 def fetch(patches)
   (patches || []).each do |patch|
@@ -19,8 +29,7 @@ def fetch(patches)
     system %(wget -q #{url.shellescape} || echo Failed to download patch)
   rescue => ex
     $stderr.puts ex.inspect
-  end  
-  cleanup
+  end
 end
 
 def cleanup
@@ -41,24 +50,14 @@ def cleanup
   puts "Maybe some old versions to remove:", similar.sort_by(&:downcase).join("\n")
 end
 
-# 1. Visit https://patchstorage.com/author/holmium/ and scroll to the end
-# 2. Extract via browser console: copy($x('//*[@id="mason-layout"]/div/div/div/div/a').map(function(a){ return a.getAttribute('href') }))
-Dir.chdir(File.join(__dir__, 'holmium')) do
-  File.open('index.json') do |index|
-    fetch JSON.load(index)
-    cleanup
-  end
-end
+# holmium: visit https://patchstorage.com/author/holmium/ and scroll to the end
+# Mozaic: visit https://patchstorage.com/platform/mozaic/ and scroll to the end
+#
+# index.json: extract via browser console
+# copy($x('//*[@id="mason-layout"]/div/div/div/div/a').map(function(a){ return a.getAttribute('href') }))
 
-exit
+fetch_all 'holmium'
 
-# 1. Visit https://patchstorage.com/platform/mozaic/ and scroll to the end
-# 2. Extract via browser console: copy($x('//*[@id="mason-layout"]/div/div/div/div/a').map(function(a){ return a.getAttribute('href') }))
-Dir.chdir(File.join(__dir__, 'Mozaic')) do
-  File.open('index.json') do |index|
-    fetch JSON.load(index)
-    cleanup
-  end
-end
-
-
+fetch_all 'Mozaic'
+# omitted:
+# "https://patchstorage.com/gauss-8-track/" – too big

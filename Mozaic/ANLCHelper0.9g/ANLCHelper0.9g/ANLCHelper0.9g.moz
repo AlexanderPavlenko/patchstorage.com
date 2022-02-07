@@ -1,0 +1,1979 @@
+@Description
+Arturia & Novation LED Controller Helper Script (0.9g)
+
+20210510-- rewritten to add support of LaunchKey mini MK3 and Arturia MiniLab Mk ii (by Tim6502)
+   * please set kbdModel below to 2 or 3 or 10 !
+
+Version: .9b7b  (by espiegel123)
+
+20210107 -- make some small changes to make it easier to update for Mark 3 Launchkey's.
+Per an AB forum user, the drum pads on the mk 3 are notes 36 to 51. And colors are numbers 0 to 127.
+If you want to adapt this to a mark 3, you can (should) remove the calls that index the colors.
+The Mark 2 only has 16 colors while the Mark 3 has 128 colors (values 0 to 127).
+To do this, we look up colors from the array 'colors' and the max index 'highestColor'.
+In @handleSettings1Dial and @settings1Knob we scale per the 'highestColor' setting.
+
+20210106 rename from LKey Launcher 44 to LKey Auxiliary
+-- change title of main page
+
+More help provided in a text file found in the folder in which this script was provided. 
+Apology for the sketchiness of these docs. Time is short.
+
+
+This script puts a LaunchKey Mark 2 into InControl mode and allows you to set the LED colors so that you can use the
+pads as buttons or keys. The buttons are organized in groups with the same colors. The buttons can behave indepdently or
+as part of the group -- in which case only one button is 'on'. All buttons have an "on color" and and "off color".
+
+You can set various button behaviors so that the lights are meaningful. 
+Buttons can be toggles or momentary and can send notes or CC values. A number of behaviors can be defined.
+
+There are separate channels for the padEvent output and CCdial output. 
+The rectangular button presses are passed out unchanged on the padEventChannel. These are easily changeable. 
+The MIDI channel on which the dials are send is settable on the page where the CC dials are set up.
+
+
+=========================
+TIPS:
+- Use the shift key to switch between the settings pages. The first page just displays the state of the current pads.
+- Pads are organized in groups that share the same color scheme (which you can change)
+- Groups have 3 modes: group, independent, group keys. 
+  - Group mode. Only one button in a group is on at any one time. 
+    Use the Retrigger setting for situations like a clip launcher where you want to be able to retrigger an already playing clip.
+    Retrigger off in a situation where it doesn't make sense to re-select the already selected option.
+  - Independent mode. Each button in a group acts independently. 
+A number of options determine the pad behaviors such as whether the pads act as toggles or momentary buttons.
+  - For key (momentary) mode: offMessage=-1 and SendUp: 1
+  - Groups set to groupKeys have all buttons set to momentary and sendup
+- Retrigger only applies to group mode pads.
+
+=========================  
+@end
+
+
+////////////////////////////////////////////////
+//
+//  Setup for LaunchKey Mini Mk3:
+//     Mini DAW Port -> Mozaic  -*-> (ch10) Mini DAW Port
+//                               |
+//                               *-> (not ch10) your apps
+//     You can use e.g. StreamByter to filter channels.
+//     Does _not_ use the DAW mode!
+//
+//
+//  Setup for Arturia MiniLab Mk3:
+//     Arturia Port -> Mozaic  -*-> Arturia Port
+//                              |
+//                              *-> your apps
+//   Note: Set this to any of the (original) presets 2-7.
+//
+////////////////////////////////////////////////
+
+@onLoad
+  //This will put the launchkey in inControl mode and set the colors
+  //tapping a pad will toggle its color.
+  
+  // kbdModel -  MUST SET version of KeyboardA controller
+  //  2 - LaunchKey Mark 2
+  //  3 - LaunchKey mini MK3
+  // 10 - Arturia MiniLab Mk ii
+  
+  kbdModel = 3
+     useRGB=TRUE   // for LK MiniMK3 only: set to FALSE to use only 16 pre-selected colors
+     
+  ccStartRange=21  // settings for CC outs from knobs out CCs. 
+                   // when -1: use the keyboard's native CCs, else this is the first in range
+  
+  // Note:  padEventChan - where to send pad event
+  //   - this should be different from lkChan, so it can be filtered
+  //   - changed from ch10 to ch8 below, since LK MK3 uses ch10 for DAW, and MK2 uses ch1.
+  
+  oldstartnote = -1  // assigned here as the value was accessed before being defined
+  
+  
+  //////// BUTTONS AND PADS AND THEIR NOTE NUMBERS
+  //     variables & constants related to the pads and buttons on the controllers
+  RoundButtonTop    = -1 // the MIDI note for the top button (round button on MK2). -1 if none
+  RoundButtonBottom = -1 // the MIDI note for the bottom button (round button on MK2). -1 if none
+  RoundCCTop    = -1 // the CC equivalent when no top button. -1 if none
+  RoundCCBottom = -1 // the CC equivalent when no bottom button. -1 if none
+  
+  // roundButtonsPass can be used to send round button presses out. this is generally turned off
+  // since we use roundButtons internally (for switching configurations). If you enable this,
+  // you may want to turn off internal use of the round button.
+  roundButtonsPass = 0 // when set, send out presses of the round buttons on the padEventChan
+
+  
+  //the constants below are the MIDI CC numbers of the scene and track buttons
+  sceneUp = -1 //midi cc - this setting may be used in script, others are unused!
+  sceneDown = -1 // midi cc
+  trackLeft = -1 // midi cc
+  trackRight = -1 // midi cc
+  
+  if kbdModel = 2
+  
+     ////////////////////////////////
+     // settings for LaunchKey MK2 //
+     ////////////////////////////////
+  
+     RoundButtonTop    = 104 // the top round button on MK2
+     RoundButtonBottom = 120 // the bottom round button on MK2
+     
+     sceneUp = 104 //midi cc - used in this script, others unused
+     sceneDown = 105 // midi cc
+     trackLeft = 106 // midi cc
+     trackRight = 107 // midi cc
+  
+     //constants associated with the pad buttons
+ 
+     //note that on the Mark 2 the two rows' pads don't use consecutive numbers
+     //the top pads are 96 to 103 and the bottom row is 112 to 119
+     
+     topPads    = [ 96,  97,  98,  99, 100, 101, 102, 103]
+     bottomPads = [112, 113, 114, 115, 116, 117, 118, 119]
+     
+     // indices for pads starting from lowestPad midi note thru highestPad midi note. No pad: -1
+     midiToPad = [ 0, 1, 2, 3, 4, 5, 6, 7,   -1, -1, -1, -1, -1, -1, -1, -1,  8, 9, 10, 11, 12, 13, 14, 15]    
+     lowestPad  =  96
+     highestPad = 119
+     
+     // set the available colors - via computation 
+     call @initColors
+     
+     // Some of the used colors (by index):
+     //   0-black, 1-dark red (1r), 3-red (3r), 4-dark green(1g),
+     //   5- orange (1r1g), 7- brown orange (3r1g),  10- yellow (2g2r),  11- orange-yellow (2g3r),  
+     //   13- lime (1r3g),  15- bright orange (3r3g)
+     
+     ccKnobs   = [21, 22, 23, 24, 25, 26, 27, 28]
+     maxCcKnobs = 7
+     
+     ccToPad   = [0, 1, 2, 3, 4, 5, 6, 7]
+     lowestCC  = 21
+     highestCC = 28
+     
+     lkChan = 0 //the InControl port always listens to this port. 
+                //use this channel and port for messages to the Launchkey
+     inControlNote = 12
+     
+  elseif kbdModel = 3
+    
+     /////////////////////////////////////
+     // settings for LaunchKey Mini MK3 //
+     /////////////////////////////////////
+     
+     RoundCCTop    = 104  // cc - the top square button ( '>' )
+     RoundCCBottom = 105  // cc - the bottom square button ( 'Stop Solo Mute' )
+     
+     sceneUp = 106   //midi cc - key combo: Shift + '>'  (i.e. arrow up)
+     sceneDown = 107 //midi cc - key combo: Shift+'Stop/Solo/Mute' (i.e. arrow down)
+     
+     trackLeft = 102 // Shift+'Fixed Chord' (i.e. arrow left)
+     trackRight= 103 // Shift+'ARP'  (i.e. arrow right)
+
+     
+     topPads    = [ 40, 41, 42, 43, 48, 49, 50, 51]
+     bottomPads = [ 36, 37, 38, 39, 44, 45, 46, 47]
+     lowestPad  = 36
+     highestPad = 51
+    
+     // indices for pads starting from lowestPad midi note thru highestPad midi note
+     midiToPad = [ 8, 9, 10, 11,  0, 1, 2, 3,  12, 13, 14, 15,  4, 5, 6, 7]
+     lowestPad  =  36
+     highestPad =  51
+     
+     // set the available colors - via computation 
+     // call @initColors   // Note: may instead want to create an 16-element array with fixed colors
+                           //       corresponding to the colors used by the MK2 controller.
+     colors = [0x00, 0x07, 0x06, 0x05,   0x17, 0x09, 0x0A, 0x0B,   0x16, 0x63, 0x0D, 0x3E,   0x15, 0x11, 0x61, 0x6D]
+     highestColor=15
+     
+     // now assign remaining RGB colors from MK3 
+     if useRGB
+        // cycle through all available colors and add ones not yet selected
+        for i=0 to 127
+           found=FALSE
+           j=0
+           while j<=15 and not found
+              if colors[j] = i 
+                 found=TRUE
+              endif
+              j=j+1
+           endwhile
+           if not found
+              Inc highestColor
+              colors[highestColor]=i 
+           endif
+        endfor
+     endif
+     
+     ccKnobs    = [21, 22, 23, 24, 25, 26, 27, 28]
+     maxCcKnobs = 7
+     
+     ccToPad   = [0, 1, 2, 3, 4, 5, 6, 7]
+     lowestCC  = 21
+     highestCC = 28
+     
+     lkChan = 9 // NOTE: MK3 listens on ch 10 on the DAW port! No InControl intialization.
+     
+  elseif kbdModel = 10
+  
+     ///////////////////////////
+     // Arturia MiniLab Mk ii //
+     ///////////////////////////
+     
+     // Rotaries: 
+    
+     RoundCCTop    = 113  // click on rotary #1 (to serve as top button)
+     RoundCCBottom = 115  // click on rotary #8 (to serve as bottom button)
+  
+     //constants associated with the pads 
+    
+     topPads    = [36, 37, 38, 39, 40, 41, 42, 43]  // pads 1-8
+     bottomPads = [44, 45, 46, 47, 48, 49, 50, 51]  // pads 9-16 - must select with button (which is then lit)!
+     
+     // indices for pads starting from lowestPad midi note thru highestPad midi note. No pad: -1
+     midiToPad  = [ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15]    
+     lowestPad  =  36
+     highestPad =  51
+     
+     // the available colors
+     // colors=[0x00, 0x01, 0x04, 0x05, 0x10, 0x11, 0x14, 0x7f] 
+     // highesrColor = 7
+     //   //black, red, green, yellow(pink), blue, magenta(purple), cyan (light blue), white 
+     // regular:
+     // colors = [0x00, 0x10, 0x11, 0x01,   0x10, 0x10, 0x11, 0x11,   0x14, 0x14, 0x05, 0x05,   0x04, 0x14, 0x05, 0x7F]
+     // varied:
+     colors = [0x00, 0x11, 0x05, 0x01,   0x11, 0x14, 0x10, 0x05,   0x10, 0x05, 0x04, 0x14,   0x04, 0x10, 0x14, 0x7F]
+     highestColor = 15
+     
+     // also set up for drawing color via sysex
+     setColSys=[0x00, 0x20, 0x6B, 0x7F, 0x42, 0x02, 0x00, 0x10] // + [7n, cc]- where n is the pad# and cc is the color
+     arturiaColor = [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0]
+     // this keyboard will re-paint with internal color on key release - use array to refresh color
+     
+
+     // CcKnobs
+     ccKnobs = [112, 74, 71, 76, 77, 93, 73, 75,    114, 18, 19, 16, 17, 91, 79, 72]
+     maxCcKnobs = 15
+     
+     ccToPad[0]  = [11, 12,  9, 10, -1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1] // 16-
+     ccToPad[16] = [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]        // 32-
+     ccToPad[32] = [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]        // 48-
+     ccToPad[48] = [-1,-1,-1,-1,-1,-1,-1, 2, 15, 6, 1, 7, 3, 4, -1, 14]     // 64-
+     ccToPad[64] = [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1, 13, -1, 5, -1,-1]     // 80-
+     ccToPad[80] = [-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1,-1]        // 96-
+     ccToPad[96] = [0, -1, 8]
+     lowestCC = 16
+     highestCC = 114
+     
+     maxRelativeCCs = 1  // max index, -1 if there are no relative CC knobs
+     relativeCC = [112, 114]
+     relativeCCVal = [64, 64]
+     
+     lkChan = -1 // Arturia uses sysex for lighting pads
+  endif
+  
+  //user settings
+  SetShortName {ANLCHE}
+  maxConfigs = 3 //maximum pages/configs. probably should not set this larger than 4 as it hasn't been tested
+  
+  //internal constants and variables. not user editable
+  startTime = systemTime //time in MS
+  groupMode = 1 //constant. when groupmode is on for a group only one button can be on at a time
+  independentMode = 0 // constant. use this to have all buttons in a group be independent
+  groupKeys = 2 // when groupKeys is on, the value sent will be the pad's velocity for all keys in the group
+  maxGroups = 8 // number
+  
+  
+  padsPage = 0
+  settingsPage1 = 1 //the first settings page -- group properties
+  settingsPage2 = 2
+  settingsPage3 = 3 //settings for dial remapping and more
+  lastPage = settingsPage3
+  pageNum = padsPage //page 1 is setup page
+  
+  
+  //momentaryDelay = 100 //remove? RETIRED
+  toggleType = 0
+  momentaryType = 1
+  //velocityType = 2 // consider a new padButtonType
+  
+  
+  //////// MORE INTERNAL VARIABLES
+  startingUp = 1 //some routines need to know if startUp is in process
+  activeConfig = -1 //means no configuration is active yet. later this will be used to track what is active
+  
+  if unassigned defaultConfig
+    defaultConfig = 1 // index of the configuration to load. config numbers start at 1 for simplicity
+    configToReady = 1
+    //log {init all configs}
+    call @initAllConfigurations
+  endif
+  
+ 
+  if unassigned numActivePages
+    numActivePages = maxConfigs
+  endif
+   
+  initPadState = 0 // 0 inits pads to off ; 1 inits pads to on ; at startup all pads are off or on 
+  //onlyOneActive = 1 //set this to 1 to allow only one active pad on at a time; otherwise, each pad toggles indepdendently
+  
+  //log{about to load session config. TIME (since launch: )}, (systemTime-startTime)/1000
+  call @loadConfiguration
+
+  //internal settings
+  showLayout 2
+  //variables
+  autoInit = 1 //1 means send inControl On at startup
+  inControlState = 0 //tracks whether the LK is in inControl mode
+  //forwardPadOnEvents determines whether we send out midi events for others to use
+  //or simply send events to the LaunchKey to set the colors. Normally this wil be on
+  forwardPadOnEvents = 1 // when 0, do nothing. the only reason to turn it off is for testing -- I think
+ 
+  
+  padDown = -1 //this is set to a pad number while a pad is down -- used on settings page
+  currentPad = -1 //when pads are not. this tracks the currently 'on' pad. only makes sense for group situation
+  midiPadDown = -1
+  fillArray groupActivePad,-1,maxGroups //when in groupMode this indicates currently active pad if there is one
+  
+
+  if autoInit
+    call @inControlOn
+  endif
+  
+  if initPadState
+    call @initLEDsOn
+  else //log {LEDs off}
+    call @initLEDsOff
+  endif
+  
+  call @goToPadsPage
+@end /////// ON LOAD
+
+@initColors
+   // set the available colors for LK MK2 - via computation upfront
+   //   redVal =  colorIndex % 4
+   //   greenVal = DIV colorIndex,4
+   //   LEDcolor = redVal + (16*greenVal)  
+   highestColor = 15
+   for i=0 to highestColor
+      colors[i] = (i % 4) + (16 * (Div i, 4))
+   endfor
+@end
+
+//////////////////////////////////////
+/////// DEFAULT CONFIGURATIONS ///////
+//// edit these to create your own preferred default configurations
+///////////////////////////////////////////
+
+
+@initDefaultConfig1
+//Customize this routine to create the default config (page) 1
+//this is what will load as config 1 the first time the script is run.otherwise
+//the script remembers the last settings it had
+
+//this routine handles the user-configurable items that constitute a 'setup'
+//originally this was just pad-specific settings, but there are other setting here, too. despite the name
+
+//MIDI Channel stuff. Note that raw MIDI channels are one less than the human-readable version.
+//what we call midi channel 1 is really MIDI channel 0
+
+
+//// NOTES ON INTERNAL ARRAYS
+//// groupSetting
+//// groupRetrigger
+//// groupMidiChan
+//// groupStartNote
+//// oncolor
+//// offcolor
+////
+//// ccout (when maxCcKnobs > 7, this includes a second row  of rotaries)
+//// ccForward
+////
+//// padSendType. If value>=0, the value is the CC number used for that pad. If the value is <-1 then a MIDI note is sent
+//// padOffMessage - if not -1, this value is sent when the pad is turned off.
+//// padSendUp - when not -1, a message is sent when a pad is released
+//// padButtonType - only used for independent mode buttons. options toggleType or momentaryType
+
+  padEventChan = 7 //channel on which to send pad events
+  ccDialChan= 8
+  
+  //use deftault
+  //roundButtonsPass = 0 // when this is set, we send out presses of the round buttons on the padEventChan
+
+  
+  if unassigned navButtons
+    navButtons = 1 //whether the roundButtons are active as nav buttons
+  endif
+  //rectButtonsPass = 1 //when this is set we pass out the track and scene button presses without change (cc 104-107)  
+  //group settings. 4 groups of 4 buttons each: 0-3,4-7,8-12,12-15
+  groupSetting[0]=groupMode
+  for i=1 to maxGroups-1
+    groupSetting[i]=independentMode
+  endfor
+ 
+  fillArray groupRetrigger,1,maxGroups
+  fillArray groupMidiChan,-1,maxGroups //-1 means uses globalPadChan 
+  fillArray groupStartNote ,-1 , maxGroups
+
+  //colors
+  roundButtonTopColor[0] = 3 //indexed color; the 'up' color
+  roundButtonTopColor[1] = 5 //down color
+  roundButtonBottomColor[0] = 3
+  roundButtonBottomColor[1] = 5
+  
+  oncolor[0]=3
+  offcolor[0]=5 //41
+  oncolor[1]=12
+  offcolor[1]= 13 //17
+  oncolor[2]=3
+  offcolor[2]=4  //13
+  oncolor[3]=15
+  offcolor[3]= 5 //17
+    
+  
+  for i=0 to maxCcKnobs
+     if ccStartRange >= 0
+        ccOut[i]= ccStartRange+i
+     else 
+        //native knobs are defined in ccKnobs
+        ccOut[i]= ccKnobs[i] //ccOut is an array where the values indicate the cc number used for output
+        //by default we just use the native cc Numbers
+     endif
+  endfor
+  ccForward = 1 //by default forward ccs on the padSendChan
+ 
+  
+  //FillArray padSendsToggleOff,-1,16 // REMOVED THIS ARRAY 
+  //use padOffMessage instead if this value for a pad is >-1 send the stored value when the button toggles    
+  
+  ////////////////////
+  for i=0 to 15
+    padGroup[i] = DIV i, 4
+  endfor
+  
+  fillArray padSendType,-1,16 //-1 is note, anything else is a CC number
+  fillArray padOffMessage,-1,16 //-1 is 'don't send an off message, otherwise the value to send
+
+  
+  //put customized values here
+  padSendType[8]=65
+  padSendType[9]=66
+  padSendType[10]=67
+  padSendType[12]=80
+  padSendType[13]=81
+  padSendType[14]=82
+  
+  //log {Assigning custom off message sent when the pad Light goes off
+  padOffMessage[8]=127
+  padOffMessage[9]=127
+  padOffMessage[10]=127
+  
+  fillArray padSendUp,0,16 //this array determines whether an event is sent when the pad is released
+  padSendUp[8]=1
+  padSendUp[9]=1
+  padSendUp[10]=1
+  padSendUp[12]=1
+  padSendUp[13]=1
+  padSendUp[14]=1
+  padSendUp[15]=1
+  
+  
+  fillArray padButtonType,toggleType,16 //0 is toggle, 1 is momentary type. only relevant for non-group buttons
+  padButtonType[12]=momentaryType
+  padButtonType[13]=momentaryType
+  padButtonType[14]=momentaryType
+  padButtonType[15]=momentaryType
+@end //@initDefaultConfig1
+
+@initDefaultConfig2 
+  padEventChan = 7  //channel on which to send pad events
+  ccDialChan= 8
+  roundButtonsPass = roundButtonsPass //use the default
+  ccForward = 1 //by default forward ccs on the padSendChan
+  
+  for i= 2 to maxGroups-1
+    groupSetting[i]=independentMode
+  endfor 
+  groupSetting[0]=groupKeys
+  groupSetting[1]=groupKeys
+
+  fillArray groupRetrigger,1,maxGroups
+  fillArray groupMidiChan,-1,maxGroups //-1 means uses globalPadChan
+  fillArray groupStartNote ,-1 , maxGroups 
+  
+  //colors
+  oncolor[0]=5
+  offcolor[0]=12 //41
+  oncolor[1]=13
+  offcolor[1]= 1 //17
+  oncolor[2]=5
+  offcolor[2]=10  //13
+  oncolor[3]=15
+  offcolor[3]= 5 //17
+
+  for i=0 to maxCcKnobs
+     if ccStartRange >= 0
+        ccOut[i]= ccStartRange+i
+     else 
+        //native knobs are defined in ccKnobs
+        ccOut[i]= ccKnobs[i] //ccOut is an array where the values indicate the cc number used for output
+        //by default we just use the native cc Numbers
+     endif
+  endfor
+    
+  for i=0 to 15
+    padGroup[i] = DIV i, 8
+  endfor
+  
+  groupStartNote[0]=60
+  groupStartNote[1]=60
+  groupMIDIChan[0]=1
+  groupMIDIChan[1]=2
+  //set the upper and lower button rows to use notes based on groupStartNote
+  for i=0 to 7
+    padSendType[i]=-1 * (groupStartNote[0]+i)
+    padSendType[i+8]= -1 * (groupStartNote[1]+i)
+  endfor
+  
+  //fillArray padSendType,-1,16 //-1 is note, anything else is a CC number
+  fillArray padOffMessage,-1,16 //-1 is 'don't send an off message, otherwise the value to send 
+  fillArray padSendUp,1,16 //this array determines whether an event is sent when the pad is released 
+  fillArray padButtonType,momentaryType,16 //0 is toggle, 1 is key. only relevant for non-group buttons
+  
+  roundButtonTopColor[0] = 2 //indexed color; the 'up' color
+  roundButtonTopColor[1] = 3 //down color
+  roundButtonBottomColor[0] = 5
+  roundButtonBottomColor[1] =12
+@end //@initDefaultConfig2
+
+@initDefaultConfig3
+  //log {INIT DEFAULT 3}
+  padEventChan = 7 //channel on which to send pad events
+  ccDialChan= 8
+  //roundButtonsPass = roundButtonsPass
+  ccForward = 1 //by default forward ccs on the padSendChan
+  
+  for i= 0 to maxGroups-1
+    groupSetting[i]=independentMode
+  endfor 
+
+  fillArray groupRetrigger,1,maxGroups
+  fillArray groupMidiChan,-1,maxGroups //-1 means uses globalPadChan
+  fillArray groupStartNote ,-1 , maxGroups
+  
+  //colors
+  oncolor[0]=5
+  offcolor[0]=12
+  oncolor[1]=13
+  offcolor[1]= 5
+  oncolor[2]=5
+  offcolor[2]=1
+  oncolor[3]=11
+  offcolor[3]= 13
+  oncolor[4]=5
+  offcolor[4]=6
+  oncolor[5]=13
+  offcolor[5]= 1
+  oncolor[6]=4
+  offcolor[6]=7
+  oncolor[7]=15
+  offcolor[7]= 5
+
+  for i=0 to maxCcKnobs
+     if ccStartRange >= 0
+        ccOut[i]= ccStartRange+i
+     else 
+        //native knobs are defined in ccKnobs
+        ccOut[i]= ccKnobs[i] //ccOut is an array where the values indicate the cc number used for output
+        //by default we just use the native cc Numbers
+     endif
+  endfor
+    
+  for i=0 to 15
+    padGroup[i] = DIV i, 2
+  endfor
+  
+  fillArray padSendType,-1,16 //-1 is note, anything else is a CC number
+  fillArray padOffMessage,-1,16 //-1 is 'don't send an off message, otherwise the value to send 
+  fillArray padSendUp,1,16 //this array determines whether an event is sent when the pad is released 
+  fillArray padButtonType,momentaryType,16 //0 is toggle, 1 is key. only relevant for non-group buttons
+  
+  roundButtonTopColor[0] = 2 //indexed color; the 'up' color
+  roundButtonTopColor[1] = 3 //down color
+  roundButtonBottomColor[0] = 5
+  roundButtonBottomColor[1] =12
+@end //@initDefaultConfig3
+
+
+
+///////////////////////////////////
+
+@inControlOn 
+  if kbdModel=2
+     SendMidiNoteOn lkChan,inControlNote,127
+  endif
+  inControlState=1
+@end
+
+@initLEDsOn
+  //set latchOn for each local pad
+  //send onColor to each remote padpad
+  
+  for padToUpdate = 0 to 15
+    latchPad i, 1
+    call @updatePadColor
+  endfor 
+  //log{INITLEDSON: init savedPadState to 1}
+  FillArray savedPadState[0],1,16*maxConfigs 
+@end
+
+@initLEDsOff
+  for padToUpdate = 0 to 15
+    latchPad i, 0
+    call @updatePadColor
+  endfor
+  //log{INITLEDSOFF: init savedPadState to 0}
+  FillArray savedPadState[0],0,16*maxConfigs
+@end
+
+@colorLED
+   // in: cPad - the key you want to color
+   //     colorIndex - the index of the color to use
+   if colorIndex < 0
+       // skip, color is computed as -1 when not a pad!
+   elseif kbdModel=10   // Arturia needs special handling
+      // Log {cPad: }, pad
+      thePad = cPad - lowestPad
+      if thePad < 16  // we can only paint the two rows of pads
+         theColor = colors[colorIndex]
+         setColSys[8]=[ 0x70 + thePad, colors[colorIndex] ]
+         SendSysEx setColSys, 10
+         // Log {Col }, cPad, {: col[}, colorIndex, {]=}, colors[colorIndex]
+         arturiaColor[thePad]=theColor  // may need to refresh color later!
+      endif
+   else
+      SendMidiNoteOn lkChan, cPad, colors[colorIndex]
+   endif
+@end
+
+@refreshLED
+   // only for Arturia: refresh color is necessary after Midi Off note on pad
+   // in: MidiNote - valid pad note on which to refresh color
+   thePad = MIDINote - lowestPad
+   setColSys[8]=[ 0x70 + thePad, arturiaColor[thePad] ]
+   SendSysEx setColSys, 10
+   // Log {Col }, cPad, {: col[}, colorIndex, {]=}, colors[colorIndex]
+@end
+
+@LEDsZero
+  // the color at index 0 is always black/off
+  colorIndex=0
+  for i = 0 to 7
+    //log {LEDs zero. Pad },i
+    cPad = topPads[i]
+    call @colorLED
+    cPad=bottomPads[i]
+    call @colorLED
+  endfor
+@end
+
+@shareConfigsToGlobal
+  GLOBAL0[0]=050119 //my developer id to make sure on import that data shared is correct
+  GLOBAL0[1]=170101 //format id for LKey Launcher 1
+  //CopyArray myPresets[0],GLOBAL0[2],maxPresets*myPresetSize
+  //copy all the configuration arrays into the global
+  
+  //build a presets array that stacks each of the arrays that we use into an array
+  //loadAddress is the array
+  loadAddress = 2 // 2 is the first free slot
+  //num configs is maxConfigs
+  //we don't need the bottom layer of each array just the stacked values where the config data is stored
+  
+  
+  //entries with 1 value per configuration slot
+  dataSize = 1 //slots used per config
+  arraySize = maxConfigs * dataSize //number of slots
+  CopyArray padEventChan[1], GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize //calculate where to load the next array
+  CopyArray ccDialChan[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize //calculate where to load the next array
+  CopyArray ccForward[1], GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize //calculate where to load the next array
+  CopyArray roundButtonsPass[1] , GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  
+  //entries with two slots per config
+  dataSize = 2
+  arraySize = maxConfigs * dataSize
+  CopyArray roundButtonTopColor[1], GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray roundButtonBottomColor[1], GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  
+  dataSize = 8
+  arraySize = maxConfigs * dataSize
+  CopyArray ccOut[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  
+  //the maxGroup sized arrays
+  dataSize = maxGroups
+  arraySize = maxConfigs * dataSize
+  CopyArray groupSetting[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray groupRetrigger[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray oncolor[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray offcolor[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray groupMidiChan[1], GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray groupStartNote[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  
+  //the numberOfPads (16) sized arrays
+  dataSize=16
+  arraySize = maxConfigs * dataSize
+  CopyArray padGroup[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray padSendType[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray padOffMessage[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray padSendUp[1],GLOBAL0[loadAddress], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray padButtonType[1],GLOBAL0[loadAddress], arraySize
+  //loadAddress = loadAddress + arraySize
+  
+ // if debugLog
+    log {=======Loaded configurations into global array for sharing }
+ // endif
+
+@end //shareConfigsToGlobal
+
+
+@loadConfigsFromGlobal
+//check to make sure that there are presets to be loaded via GLOBAL0
+if (GLOBAL0[0]=050119) and  (GLOBAL0[1]=170101)
+  //copy data from global into the local arrays.
+  loadAddress = 2 // the preset data starts in GLOBAL0[2]
+  //entries with 1 value per configuration slot
+  dataSize = 1 //slots used per config
+  arraySize = maxConfigs * dataSize //number of slots
+  CopyArray GLOBAL0[loadAddress],padEventChan[1],  arraySize
+  loadAddress = loadAddress + arraySize //calculate where to load the next array
+  CopyArray GLOBAL0[loadAddress],ccDialChan[1], arraySize
+  loadAddress = loadAddress + arraySize //calculate where to load the next array
+  CopyArray GLOBAL0[loadAddress],ccForward[1], arraySize
+  loadAddress = loadAddress + arraySize //calculate where to load the next array
+  CopyArray GLOBAL0[loadAddress],roundButtonsPass[1], arraySize
+  loadAddress = loadAddress + arraySize
+  
+  //entries with two slots per config
+  dataSize = 2
+  arraySize = maxConfigs * dataSize
+  CopyArray GLOBAL0[loadAddress],roundButtonTopColor[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress],roundButtonBottomColor[1], arraySize
+  loadAddress = loadAddress + arraySize
+  
+  dataSize = 8 // number of dials
+  arraySize = maxConfigs * dataSize
+  CopyArray GLOBAL0[loadAddress],ccOut[1], arraySize
+  loadAddress = loadAddress + arraySize
+  
+  //the maxGroup sized arrays
+  dataSize = maxGroups
+  arraySize = maxConfigs * dataSize
+  CopyArray GLOBAL0[loadAddress], groupSetting[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress],groupRetrigger[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress],oncolor[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress],offcolor[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress], groupMidiChan[1],  arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress], groupStartNote[1],arraySize
+  loadAddress = loadAddress + arraySize
+  
+  //the numberOfPads (16) sized arrays
+  dataSize=16
+  arraySize = maxConfigs * dataSize
+  CopyArray GLOBAL0[loadAddress], padGroup[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress], padSendType[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress], padOffMessage[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress],padSendUp[1], arraySize
+  loadAddress = loadAddress + arraySize
+  CopyArray GLOBAL0[loadAddress],padButtonType[1], arraySize
+  //loadAddress = loadAddress + arraySize  
+  // then load the first config
+  LOG {======= CONFIGS LOADED FROM GLOBAL0}
+  FillArray savedPadState, 0, dataSize
+  activeConfig = 0
+  configToReady = 1
+  call @readyConfiguration
+
+else
+  log {=========== NO presets to load in GLOBAL0}
+endif
+
+
+@end //loadConfigsFromGlobal
+
+@readyConfiguration
+//copies a configuration's values into the current variable
+//current variables are at the 'base' (zero) level and the configuration is stored
+//in the slots that correspond to the configuration number.
+//for a single variable succh as padEventChan the current is in padEVentChan[0]
+//and the first config's is at padEventChan[1],the seccond config at padEventChan[2], etc.
+//for arrays such as padSendType[] which has a slot for each pad the current configuration is copied into
+//padSendType[0..15] which was the array used before configurations existed
+//the stored configurations are stored in padSendType[] starting at a base address that is configuration number (ordinal)
+// configuratonNumber * sizeOfArray
+//for a sixteen slot array, the slots for configurations 1,2 and 3 ae at: 16-31,32-47,48-63
+//for an eight slot array (current max groups), the starting index of configurations 1,2 and 3 are 8, 16 24
+
+
+//ready configuration copies the values from the upper part of the array into the base level
+
+//configToReady needs to be assigned by the caller; it will be a number starting at 1. 
+
+//start with the single and double value variables
+configAddress = configToReady //*sizeOfData to copy which is 1 for single values 
+//log {start readyConfig: }, configToReady
+
+//dataSize=1
+padEventChan = padEventChan[configAddress]
+ccDialChan = ccDialChan[configAddress]
+ccForward = ccForward[configAddress]
+roundButtonsPass = roundButtonsPass[configAddress]
+// SIZE THIS SECTION (in slots): 4
+
+//dataSize=2 colorOn and colorOff
+configAddress = configToReady * 2 //data size (in terms of array slots)
+CopyArray roundButtonTopColor[configAddress],roundButtonTopColor[0],2 //top color On and top Color Off
+CopyArray roundButtonBottomColor[configAddress], roundButtonBottomColor[0],2 //color on and coloroff
+//SIZE THIS SECTION: 4
+
+
+dataSize = 8 //number of dials
+configAddress = configToReady * dataSize
+CopyArray ccOut[configAddress],ccOut[0],dataSize
+//SECTION SIZE: 8
+
+
+//the maxGroup sized arrays
+dataSize = maxGroups
+configAddress = configToReady * dataSize
+CopyArray groupSetting[configAddress],groupSetting[0],dataSize
+CopyArray groupRetrigger[configAddress],groupRetrigger[0],dataSize
+CopyArray oncolor[configAddress],oncolor[0],dataSize
+CopyArray offcolor[configAddress],offcolor[0],dataSize
+CopyArray groupMidiChan[configAddress], groupMidiChan[0], dataSize
+CopyArray groupStartNote[configAddress],groupStartNote[0],dataSize
+//SECTION SIZE: MAXGROUPS * numArrays = 8 * 5 = 40
+
+
+//the numberOfPads (16) sized arrays
+dataSize=16
+configAddress = configToReady * dataSize
+CopyArray padGroup[configAddress],padGroup[0],dataSize
+CopyArray padSendType[configAddress],padSendType[0],datasize
+CopyArray padOffMessage[configAddress],padOffMessage[0],dataSize
+CopyArray padSendUp[configAddress],padSendUp[0],dataSize
+CopyArray padButtonType[configAddress],padButtonType[0],dataSize
+if unassigned savedPadState //savedPadState
+  FillArray savedPadState,0,16
+  log {readyconfig --- INIT SAVEDPADSTATE}
+endif
+CopyArray savedPadState[configAddress],savedPadState[0],dataSize
+//SECTION SIZE: 16 * numArrays = 16 * 6 = 96
+
+//TOTAL BYTES IN ONE CONFIGURATION: 96 + 40 + 8 + 4 + 4 = 48 + 96 = 152 - savedPadState = 136
+//we don't needd savePadState in sharedpresets
+//log {finished readyCOnfig: }, configToReady
+@end
+
+@copyToConfiguration
+//copies the current configuration into the slots for stored configurations
+//this is the reverse process of @readyConfiguration. see its comments to understand this
+
+//targetConfig is the configuration number to save to. counting starts at 1
+configAddress = targetConfig //*sizeOfData to copy which is 1 for single values 
+//log {start copyToCongig: }, targetConfig
+
+padEventChan[configAddress] = padEventChan[0]
+ccDialChan[configAddress] = ccDialChan[0]
+ccForward[configAddress] = ccForward[0]
+roundButtonsPass[configAddress] = roundButtonsPass[0]
+
+configAddress = targetConfig * 2 //data size (in terms of array slots)
+CopyArray roundButtonTopColor[0],roundButtonTopColor[configAddress],2
+CopyArray roundButtonBottomColor[0], roundButtonBottomColor[configAddress],2
+
+dataSize = 8
+configAddress = targetConfig * dataSize
+CopyArray ccOut[0],ccOut[configAddress],dataSize
+
+
+//the maxGroup sized arrays
+dataSize = maxGroups
+configAddress = targetConfig * dataSize
+CopyArray groupSetting[0],groupSetting[configAddress],dataSize
+CopyArray groupRetrigger[0],groupRetrigger[configAddress],dataSize
+CopyArray oncolor[0],oncolor[configAddress],dataSize
+CopyArray offcolor[0],offcolor[configAddress],dataSize
+CopyArray groupMidiChan[0], groupMidiChan[configAddress], dataSize
+CopyArray groupStartNote[0],groupStartNote[configAddress],dataSize
+
+
+//the numberOfPads (16) sized arrays
+dataSize=16
+configAddress = targetConfig * dataSize
+CopyArray padGroup[0],padGroup[configAddress],dataSize
+CopyArray padSendType[0],padSendType[configAddress],datasize
+CopyArray padOffMessage[0],padOffMessage[configAddress],dataSize
+CopyArray padSendUp[0],padSendUp[configAddress],dataSize
+CopyArray padButtonType[0],padButtonType[configAddress],dataSize
+if unassigned savedPadState[0]
+  //log {COPYTOCONFIG--INIT SAVEDPADSTATE}
+  FillArray savedPadState, 0, dataSize
+else
+  CopyArray savedPadState[0],savedPadState[configAddress],dataSize
+endif
+@end
+
+
+//////////////////////////////////////
+
+
+@loadConfiguration
+//when configuration changes
+//if another was loaded previously then store its state
+//then load the new one
+//log {------------------------------}
+//log {loadConfig: }, configToReady
+//log {----------- TIME: },(systemTime-startTime)/1000
+//log {------------------------------}
+  //log {trying to Load configuration. aciveConfig: }, activeConfig
+  if activeConfig > 0
+    //configToLoad
+    //log {saving active config state:}, activeConfig
+    targetConfig = activeConfig
+    call @CopyToConfiguration
+  else
+    //do nothing we haven't finished loading the session
+  endif
+  
+  configToReady = configToReady
+  call @readyConfiguration
+  activeConfig = configToReady
+@end
+
+@nextConfig
+  call @savePadStates
+  if activeConfig < numActivePages // was maxConfigs //
+    INC configToReady
+  else
+    configToReady = 1
+  endif
+  //log {NEXTCONFIG. active: }, activeConfig,{ configToReady: }, configToReady
+  call @loadConfiguration
+  call @gotoPadsPage
+@end
+
+@InitAllConfigurations
+//called only the first time the plugin is run
+//this loads the default configurations one-by-one
+//copies them into the slots where they will persist until edited
+//log {INITALLCONFIGURATIONS}
+
+  call @initDefaultConfig1
+  targetConfig =1 
+  call @copyToConfiguration
+  call @initDefaultConfig2
+  targetConfig =2
+  call @copyToConfiguration
+  call @initDefaultConfig3
+  targetConfig =3
+  call @copyToConfiguration
+@end
+
+
+
+@savePadStates
+  //stores the PadState of pads 0 thru 15
+  //this lets us restore the LED states
+  for i= 0 to 15
+    savedPadState[i] = padState i
+  endfor
+@end
+
+
+@restorePadStates
+  call @inControlOn
+  //restores the pad states AND sends the appropriate color
+  LabelPads {MAIN: Controller Pads -- Config#: }, activeConfig
+  pageNum=padsPage
+  for i = 0 to 15
+    latchPad i, savedPadState[i]
+    padToUpdate = i
+    call @updatePadColor
+    labelPad i,{Pad },i
+  endfor
+  
+  //light up the round buttons
+  colorIndex=roundButtonTopColor[0]
+  cPad=roundButtonTop
+  call @colorLED
+  
+  colorIndex=roundButtonBottomColor[0]
+  cPad=roundButtonBottom
+  call @colorLED
+@end
+
+@padsPageKnob
+  if lastKnob = 3
+    numActivePages = Round(TranslateScale (GetKnobValue lastKnob),0,127,1,maxConfigs)
+    LabelKnob 3,{Pages: }, numActivePages
+  elseif lastKnob = 2
+    navButtons = Round(TranslateScale (GetKnobValue lastKnob),0,127,0,1)
+     if navButtons
+      LabelKnob 2,{NavOn}
+    else
+      LabelKnob 2,{NavOff}
+      endif   
+  endif
+@end
+
+@goToPadsPage
+  for i=0 to 15
+    LabelKnob i, {-}
+  endfor
+  SetKnobValue 2, TranslateScale navButtons ,0,1,0,127
+  if navButtons
+    LabelKnob 2,{NavOn}
+  else
+    LabelKnob 2,{NavOff}
+  endif
+  LabelKnob 3,{Pages: }, numActivePages
+  SetKnobValue 3, TranslateScale numActivePages,1,maxConfigs,0,127
+    
+  call @restorePadStates
+@end
+
+@settings2initKnobs
+  LabelKnob 0, {Group #} //a number from 0 to 3
+  LabelKnob 1, {Type} //padSendType[] -1 is note, anything else is a cc number
+  LabelKnob 2, {OffMessage} //-1 means no offMessage,otherwise value to send on off
+  LabelKnob 3, {SendUp} // 0 or 1
+@end
+
+@goToSettingsPage2
+//These are settings that determine pad properties
+//group a pad belongs to: 0 to 3
+//sendType -1 = note otherwise it means a cc
+//padOffMessage = value to send on off (default is 0 some toggles need 127)
+//retrigger
+//sendPairedOff (for momentary switches)
+  
+  LabelPads {PAD Settings -- Config#: }, activeConfig
+  call @settings2initKnobs
+ 
+  for padNum=0 to 15
+    call @LabelPadWithSettings2
+  endfor
+
+@end
+
+@settings2setKnobsToPad
+  //set the knob values and displays to match the current pad settings
+  //call by onPadDown
+  //assume that lastPad is the pad being read
+  //groupNum  = padGroup[lastPad]
+  LabelPads {Tap shift while pad down to toggle button type}
+  setKnobValue 0, TranslateScale padGroup[lastPad],0,maxGroups-1,0,127
+  LabelKnob 0, {Group: },padGroup[lastPad]
+  
+  setKnobValue 1, TranslateScale padSendType[lastPad],-1,127,0,127
+  if  padSendType[lastPad]=-1
+    LabelKnob 1, {Type: Note}
+  else
+    LabelKnob 1, {Type: CC},padSendType[lastPad]
+  endif
+
+  setKnobValue 2, Round(TranslateScale padOffMessage[lastPad],-1,127,0,127)
+  if padOffMessage[LastPad] = -1
+    LabelKnob 2,{Off:None}
+  else
+    LabelKnob 2,{Off:},padOffMessage[lastPad]
+  endif
+  
+  setKnobValue 3, TranslateScale padSendUp[lastPad],0,1,0,127
+  if padSendUp[lastPad]
+    labelKnob 3,{SendUp:On}
+  else
+    labelKnob 3,{SendUp:Off}
+  endif
+  
+@end
+
+@settings2Knob
+  val = GetKnobValue lastKnob
+  if lastKnob = 0
+     padGroup[padDown] = Round(TranslateScale val,0,127,0,maxGroups-1)
+    LabelKnob 0, {Group: },padGroup[padDown]
+
+  elseif lastKnob = 1
+    padSendType[padDown] = Round(TranslateScale val,0,127,-1,127)
+    if  padSendType[padDown]=-1
+      LabelKnob 1, {Type: Note}
+    else
+      LabelKnob 1, {Type: CC},padSendType[padDown]
+    endif
+
+  elseif lastKnob = 2
+    padOffMessage[padDown] = Round(TranslateScale val,0,127,-1,127)   
+    if padOffMessage[padDown] = -1
+      LabelKnob 2,{Off:None}
+    else
+      LabelKnob 2,{Off:},padOffMessage[padDown]
+    endif
+    
+  
+  elseif lastKnob = 3
+    padSendUp[padDown]=TranslateScale val,0,127,0,1
+
+    if padSendUp[padDown]
+      labelKnob 3,{SendUp:On}
+    else
+      labelKnob 3,{SendUp:Off}
+    endif
+    
+    
+  endif //lastKnob = 0
+  padNum = padDown
+  call @LabelPadWithSettings2
+@end
+
+@LabelPadWithSettings2
+//padNum must be set by caller
+  //log {setting 1 label; },padNum
+  //label pad padNum to display its various settings
+  if padButtonType[padNum] = toggleType
+    labelPad padNum, {Pad:},padNum,{ Grp:},padGroup[padNum],{        sendType:},padSendType[padNum],{       offMess:}, padOffMessage[padNum],{        SendUp:} , padSendUp[padNum],{        Type:Tog}
+  else
+    labelPad padNum, {Pad:},padNum,{ Grp:},padGroup[padNum],{        sendType:},padSendType[padNum],{       offMess:}, padOffMessage[padNum],{        SendUp:} , padSendUp[padNum],{        Type:Mom}  
+  endif
+@end
+
+@settings1initKnobs
+  LabelKnob 0,{-}
+  LabelKnob 1, {-}
+  LabelKnob 2, {-} 
+  LabelKnob 3, {-}
+@end
+
+@labelPadWithSettings1
+//group has been inited by caller
+//labelPad i,{Group }, i, {         on color: }, oncolor[i]
+  
+  if groupSetting[group] = groupMode
+    labelPad (group),{Group }, group, {         on color: }, oncolor[group], { mode: group}, {       retrig: },groupRetrigger[group]
+  elseif groupSetting[group] = independentMode //  indepedentMode
+    labelPad (group),{Group }, group, {         on color: }, oncolor[group],{ mode: ind.}, {       retrig: },groupRetrigger[group]
+  elseif groupSetting[group] = groupKeys
+    labelPad (group),{Group }, group, {         on color: }, oncolor[group],{ mode: keys}, {       retrig: },groupRetrigger[group]
+  endif
+  labelPad group+8,{Group }, group, {         off color: }, offcolor[group], {         midiChan: },groupMIDIchan[group]+1, {         startNote: },groupStartNote[group] //use human readable value -1 (displayed as 0) means use default
+@end
+
+@setPadsInGroupToKeys
+  //assumes group has been set to the relevant group
+  //usually called after setting a group's mode to keys
+  //this sets all pads in group to be momentary (so that LEDs respond correctly)
+  //
+  //log {setting group to keys: }, group
+  if groupSetting[group] = groupKeys
+    for i=0 to 15 //we have to scan the pads for group assignments
+      if padGroup[i] = group
+        padButtonType[i]=momentaryType
+        padSendUp[i] = 1
+      endif
+    endfor  
+  endif
+@end
+
+@handleSettings1Dial
+  // in:  dialNum - the number of the dial
+  //      mbyte - the value
+  //      
+  //LOGIC if no pad is held down change the ON color for the dial
+  //if any lower button is held down apply dial to dial's off color
+  colorIndex = Round(TranslateScale mbyte,0,127,0,highestColor)
+  group = dialNum
+  if midiPadDown <8
+    //set the color setting and send the color to the LED   
+    oncolor[group]=colorIndex
+    cPad=topPads[group]
+    call @colorLED
+  else //we really should check but we will let any lower row button activate offcolor editing
+    offcolor[group]=colorIndex
+    cPad=bottomPads[group]
+    call @colorLED
+  endif
+  call @labelPadWithSettings1
+@end
+
+@settings1Knob
+  val = GetKnobValue lastKnob
+  if lastKnob = 0
+    colorIndex = Round(translateScale val, 0,127,0,highestColor)
+    labelKnob lastKnob, {Color#:}, colorIndex
+    // this algorithm maps 0 to highestColor to the possible colors
+    
+    //knob 0 should return a number from 0 to highestColor
+    if padDown >-1
+      if padDown < 8
+        oncolor[padDown]=colorIndex
+        cPad=topPads[padDown]
+        call @colorLED
+        group = padDown
+      endif
+      
+      if padDown >=8
+        group = padDown-8
+        offcolor[group]=colorIndex
+        cPad=bottomPads[group]
+        call @colorLED  
+      endif
+
+      call @labelPadWithSettings1
+    endif //padDown >-1
+
+  elseif lastKnob = 1 //if we are here, we are dealing with a pad from 4-7. pad 4 is mode for group 0
+    //groupmode
+    if padDown>-1
+      if padDown<8 //for the upper row this is groupMode
+        group = padDown
+        newMode = Round(TranslateScale val,0,127,0,groupKeys)
+        groupSetting[group]= newMode
+        //log {GROUP: }, group,{  newMode: }, newMode, { oldSetting: }, groupSetting[group]
+        //if groupSetting[group]<>newMode
+          // {Group },i, { mode: group}
+          //only change if setting has actually changed
+          if groupSetting[group] = groupMode
+            LabelKnob lastKnob,{Mode: group}
+          elseif groupSetting[group] = independentMode
+            LabelKnob lastKnob,{Mode: ind}
+          elseif groupSetting[group] = groupKeys
+            LabelKnob lastKnob,{Mode: keys}
+            //Log {setting pads in group to momentary}
+            call @setPadsInGroupToKeys
+          endif
+        else //pad is on lowerrow this is groupMidiChan
+          group = padDown-8
+          groupMIDIChan[group] = Round(TranslateScale val,0,127,-1,15)
+          if groupMIDIChan[group]>-1
+            LabelKnob 1,{Chan: },groupMIDIChan[group]+1 //display channels as 1-16
+          else
+            LabelKnob 1,{Chan: DEF}
+          endif
+        endif //padDown<8
+        call @labelPadWithSettings1
+    endif //padDown>-1
+  elseif lastKnob = 2 //for upper row REtrig, for lower row groupStartNote
+    if padDown>-1
+      if padDown<8 //upperrow
+        groupRetrigger[group] = Round(TranslateScale val,0,127,0,1)
+        LabelKnob lastKnob,{Retrig: }, groupRetrigger[group]
+        group = padDown
+      else //lower row  
+        group = padDown-8
+        groupStartNote[group]=Round(TranslateScale val,0,127,-1,127)
+        if groupStartNote[group]>-1
+          LabelKnob lastKnob,{Note: },groupStartNote[group]
+        else
+          LabelKnob lastKnob,{Note: DEF}
+        endif
+      endif //padDown < 8
+      call @labelPadWithSettings1
+    endif//padDown
+  endif //lastKnob = 0
+@end
+
+@CalcGroupNotes
+//assumes that Group has been initialized
+//find the first pad in the group
+//set the padSendType for that pad to -1 * groupStartNote
+//go to next pad (unless we are at pad 15)
+//if the pad is in the group set the padSendType
+//repeat until the pad is not in the group OR we reach the last pad
+
+i=0
+startOfGroup = -1 //use this to track which pad starts the book
+flag = -1
+//nextNote = groupStartNote[group]
+//find first pad in group
+repeat
+  if padGroup[i] = group
+    startOfGroup = i
+  else
+    i=i+1
+  endif
+until startOfGroup > -1
+
+//set the start note
+//go to next pad
+//if pad is in group, set its start note
+//repeat
+//log {==CalcGroupNotes==  group#: },group,{  startOfGroup: }, startOfGroup
+repeat
+  padSendType[i] = -1 * (groupStartNote[group] + (i - startOfGroup))
+  //log{-- setting note for pad: }, i,{ note: },(groupStartNote[group] + (i - startOfGroup))
+  i=i+1
+until (i > 15) or (padGroup[i]<>group)
+
+//we assume there is at least one pad is in the group and the all pads in group are consecutive
+
+
+@end
+
+@settings1padUp
+  //if the startNote changed, update the notes in the group
+  if (lastPad > 7) and (oldStartNote <> groupStartNote[group]) //if startNote changed
+    //log{Group start note changed. Setting pads in group....}  
+      group = lastPad - 8
+      groupSetting[group] = groupKeys //when setting the startNote assume the user wants them to be keys
+      call @CalcGroupNotes      
+  endif
+@end
+
+@settings1PadDown
+//paddown has been set by caller
+  if lastPad<8 //top row is for on color and other attributes
+    group = lastPad
+    //TranslateScale index,0,15,0,127
+    //SetKnobValue 0, oncolor[group]
+    SetKnobValue 0, TranslateScale oncolor[group],0,highestColor,0,127
+    LabelKnob 0, {Color: },oncolor[group]
+    if groupSetting[group] = groupMode
+      labelKnob 1, {Mode: group}
+    elseif groupSetting[group] = independentMode
+      labelKnob 1, {Mode: ind}
+    elseif groupSetting[group] = groupKeys
+      LabelKnob lastKnob,{Mode: keys}
+    endif
+    SetKnobValue 1, TranslateScale groupSetting[group],0,groupKeys,0,127
+    
+    SetKnobValue 2,TranslateScale groupRetrigger[group],0,1,0,127
+    LabelKnob 2, {Retrig: }, groupRetrigger[group]
+  elseif lastPad>=8 //bottom row : off color only
+    group = lastPad - 8
+    oldStartNote = groupStartNote[group] //flag so that if it is change we recalc the notes in the group
+    SetKnobValue 0, TranslateScale offcolor[group],0,highestColor,0,127
+    LabelKnob 0, {Color: },offcolor[group]
+    SetKnobValue 1, TranslateScale groupMIDIchan[group],-1,15,0,127
+    if groupMIDIchan[group] <>-1
+      LabelKnob 1, {Chan: }, groupMIDIchan[group]+1 //display channel as 1 to 16
+    else
+      LabelKnob 1, {Chan: DEF}
+    endif
+    SetKnobValue 2, TranslateScale groupStartNote[group],-1,127,0,127
+    LabelKnob 2,{Note: }, groupStartNote[group]
+  endif
+@end
+
+@goToSettingsPage1
+//THESE ARE GROUP-WIDE SECTION: NEED TO ADD groupSetting[0]=groupMode or indedepentMode
+
+  LabelPads {GROUP Settings -- Hold Pad to Edit -- Config#: }, activeConfig
+  call @LEDsZero
+  
+  call @settings1initKnobs
+  //on the settings page pads 0 to 3 are for the oncolors
+  //pads 8 to 11 are the offcolors
+  //hold down a pad and turn knob 0 to change the corresponding pad color
+  //on pad up, change label to indicate value and also set the variable accordingly
+  page = settingsPage1
+
+  //label the pads with names and the related setting
+  for i=0 to maxGroups-1
+    
+    group = i
+    call @labelPadWithSettings1    
+    //send the color
+    colorIndex = oncolor[group]
+    cPad=topPads[group]
+    call @colorLED
+
+    colorIndex = offcolor[group]
+    cPad=bottomPads[group]
+    call @colorLED
+  endfor  
+@end
+
+@settings3Label1Pad
+//assumes padNum is filled in
+
+@end
+
+@settings3initKnobs
+  labelKnob 0, {dialChan: }, ccDialChan+1 //display channel as 1 -16 rather than 0-15
+  SetKnobValue 0,TranslateScale ccDialChan,0,15,0,127
+  labelKnob 1, {padChan:}, padEventChan+1 //display value as 1-16 rather than real range 0-15
+  SetKnobValue 1, TranslateScale padEventChan,0,15,0,127
+  labelKnob 2, {-}
+  labelKnob 3, {-}
+@end
+
+@settings3Knob
+
+//assumes that pad Down has been initiaized and is valid
+  val = GetKnobvalue lastKnob
+  if lastKnob = 0
+    ccDialChan = Round(TranslateScale val,0,127,0,15)
+    labelKnob 0, {ccChan: }, ccDialChan+1
+  elseif lastKnob =1
+    padEventChan = Round(TranslateScale val,0,127,0,15)
+    labelKnob 1, {padChan:}, padEventChan+1 //display value as 1-16 rather than real range 0-15
+  elseif (lastKnob = 2) and (padDown>-1)
+    ccOut[padDown] = Round(TranslateScale val,0,127,0,127)
+    LabelKnob 2,{dialCC: },ccOut[padDown]
+    if maxCcKnobs > 7
+       LabelPad padDown,{Dial: }, padDown+1,{       ccOut: },ccOut[padDown],{       ccOut2:},ccOut[padDown+8]
+    else
+       LabelPad padDown,{Dial: }, padDown+1,{       ccOut: },ccOut[padDown]
+    endif
+  elseif maxCcKnobs>7 and (lastKnob = 3) and (padDown>-1)
+    ccOut[padDown+8] = Round(TranslateScale val,0,127,0,127)
+    LabelKnob 3,{dialCC2: },ccOut[padDown+8]
+    LabelPad padDown,{Dial: }, padDown+1,{       ccOut: },ccOut[padDown],{       ccOut2:},ccOut[padDown+8]
+  endif
+
+@end
+
+@settings3setKnobsToPad
+//called when a pad is down on the settings3 page
+//assume only one pad is down
+  LabelKnob 2,{dialCC: },ccOut[padDown]
+  SetKnobValue 2,ccOut[padDown]
+  if maxCcKnobs>7
+     LabelKnob 3,{dialCC2:},ccOut[padDown+8]
+     SetKnobValue 3,ccOut[padDown+8]
+  endif
+  
+  if lastPad=14
+    call @shareConfigsToGlobal
+  elseif lastpad=15
+    call @loadConfigsFromGlobal
+  endif
+@end
+
+@gotoSettingsPage3
+  LabelPads {DIALS AND MISC - Config#: }, activeConfig
+  call @settings3initKnobs
+  
+  for padNum = 0 to 7 //first 8 pads are for displaying the CC KNOB settings
+    //call @settings3Label1Pad
+    if maxCcKnobs>7
+       LabelPad padNum,{Dial: }, padNum+1,{       ccOut: },ccOut[padNum],{       ccOut2:}, ccOut[padNum+8]
+    else
+       LabelPad padNum,{Dial: }, padNum+1,{       ccOut: },ccOut[padNum]
+    endif
+  endfor
+  
+  for padNum = 8 to 13
+    LabelPad padNum, {-}
+  endfor
+  
+  LabelPad 14,{Share to global}
+  LabelPad 15,{Load from global}
+@end
+
+
+@onPadDown
+  //set the knob to the appropriate value when a pad is down
+  if pageNum = settingsPage1
+    padDown = lastPad
+    call @settings1PadDown
+  elseif pageNum = settingsPage2
+    padDown = lastPad
+    //display Knob values for the four settable parameters
+    call @settings2setKnobsToPad
+  elseif pageNum = settingsPage3
+    padDown=lastPad
+    call @settings3setKnobsToPad
+  endif //pageNum - settingsPage
+@end
+
+@onPadUp
+  //assume only one pad is down at a time
+  padDown = -1
+  if pageNum=padsPage
+    LabelKnob 0,{-}
+  elseif pageNum=settingsPage1
+    call @settings1initKnobs
+    call @settings1padUp
+  elseif pageNum=settingsPage2
+    call @settings2initKnobs
+  elseif pageNum=settingsPage3
+    call @settings3initKnobs
+  endif
+@end
+
+
+@unlatchAll
+//just unlatch all pads. assumes states have been saved if needed
+for i = 0 to 15
+  LatchPad i,0
+endfor
+@end
+
+@returnFromSettingsCC 
+  //if the scene up button was pressed while on a settings page
+  if pageNum<>padsPage
+    pageNum = padsPage
+    call @goToPadsPage
+    log {Scene Up returnFromSettings}
+  endif
+@end
+
+
+@onShiftDown
+  //only change pages if no pad is being pressed
+  //otherwise shift may have a meaning
+  if padDown = -1 //if no pad is currently down
+      if pageNum<>padsPage
+        //make sure to save the changes into the configuration settings
+        targetConfig = activeConfig
+        call @CopyToConfiguration
+      endif
+  
+      INC pageNum
+      if pageNum>lastPage
+        pageNum=padsPage
+      endif
+      
+      if pageNum=SettingsPage1
+        call @savePadStates
+        call @unlatchAll
+        call @gotoSettingsPage1
+      elseif pageNum = settingsPage2
+        call @gotoSettingsPage2
+      elseif pageNum = settingsPage3
+        call @gotoSettingsPage3
+      elseif pageNum = padsPage
+        call @goToPadsPage
+      endif
+  else //a pad is down
+      if pageNum = settingsPage2
+        call @settings2shift
+      endif
+  endif//if padDown
+@end
+
+
+@settings2shift
+  //if a pad is down toggle its padButtonType from toggleType to momentaryType or back
+  //assume if we are here that padDown has the number of a single pad
+  if padButtonType[padDown] = toggleType
+    padButtonType[padDown] = momentaryType
+    padSendUp[padDown]= 1 //momentaryType buttons normally need to send up message
+  else
+    padButtonType[padDown]= toggleType
+  endif
+  padNum = padDown
+  call @LabelPadWithSettings2
+@end
+
+
+
+@onKnobChange
+  if pageNum = padsPage
+    call @padsPageKnob
+  elseif pageNum=SettingsPage1 and padDown>-1
+    call @settings1Knob
+  elseif pageNum=SettingsPage2 and padDown>-1
+    call @settings2Knob
+  elseif pageNum = settingsPage3
+    call @settings3knob
+  endif
+@end
+
+@lkeyNoteToPadNumber
+    //called when a MIDINote is received that is corresponds to a pad
+    //assume MIDINOTE is set and padNumber is ok to change
+    //get the corresponding Mozaic Pad number:0 - 15
+    //pads 0-7 are the top row (in Mozaic and on LK) and 8-15 are the bottom
+    
+    padNumber = midiToPad[ MIDINote - lowestPad ]
+@end
+
+@calcAltNoteNum
+//use this to get the note number to send when a pad's has been set with a startNte
+//padToSend and groupNum must be set
+  //noteToSend = -1 * padSendType[padToSend] //setting group start results the pasSendtype being set to -NoteToSend
+  //noteToSend = groupStartNote[groupNum] + padNumber //this is just a hack for testing
+  noteToSend = -1 * padSendType[padNumber]
+@end
+
+@forwardPadEvent
+  //assumes padToSend is set
+  //assumes that latch state of pad corresponds to on/off
+  //assumes padGroup has been set
+  
+  //if the pad is on, send the appropriate message
+  //if the pad is off, only send if sendOffMessage >-1
+  //padSendType and padSendOffMessage
+  
+  //assumes padGroup
+  //if there is a groupMIDIChan use it
+  groupNum = padGroup[padToSend]
+  if groupMIDIchan[groupNum]>-1
+    useChan = groupMIDIchan[groupNum]
+  else
+    useChan = padEventChan
+  endif
+  
+  if padSendType[padToSend]<0
+    //send the note that correspondsto the pad's note
+    //if there is an alternate start note use it rather than the received note
+    
+    if groupStartNote[groupNum]>-1
+      //calculate note value
+      noteToSend = -1 * padSendType[padNumber] //call @calcAltNoteNum
+    else
+      noteToSend = MIDInote
+    endif 
+    
+    //updated for groupKeys mode -- in which case get velocity
+    if groupSetting[groupNum]=groupKeys
+      vel = MIDIVelocity
+      //log {piano key pressed}
+    else
+      vel = 127
+    endif
+    
+    SendMidiNoteOn useChan, noteToSend, vel
+    
+  else //sendType indicates cc
+    if padState padToSend
+      valToSend = 127
+    else
+      valToSend = padOffMessage[padNumber]
+    endif
+    sendMIDICC useChan, padSendType[padToSend], valToSend 
+  endif
+@end
+
+@updatePadColor
+  //assumes padToUpdate has been properly set
+  //sets the color of the launchKey pad based on the state
+  //of the Mozaic pad
+  
+  //get the pad's group and the associated launchkey note number
+  groupNum = padGroup[padToUpdate]
+  if padToUpdate <=7
+    noteNum = topPads[padToUpdate]
+  elseif padToUpdate <=15
+    noteNum = bottomPads[padToUpdate-8]
+  endif
+  
+  //update the pad color by sending appropriate note
+  cPad=noteNum
+  if (padState padToUpdate)
+    colorIndex = oncolor[groupNum]
+    call @colorLED
+    //log{turning on. pad: }, padToUpdate
+  else
+    colorIndex = offcolor[groupNum]
+    call @colorLED
+    //log{turning off. pad: }, padToUpdate
+  endif
+@end //@updatePadColor
+
+
+@handleLKeyPadEvent
+  //MIDINOTE contains the MIDI note of the event that triggered this. And corresponds to one of the drumpads
+  buttonStateChange = 0 //is flag to indicate whether this new event triggers a state change
+  groupStateChange = 0
+  sendNote = 0 //flag set to on if we need to send out an event
+  call @lkeyNotetoPadNumber //sets padNumber
+  
+  //get group number. for four groups this yields numbers 0 - 3
+  groupNum = padGroup[padNumber]
+  
+  /////////////////////////////
+  ////////////// groupSetting[groupNum] = groupMode
+  //groupActivePad[group] -- only relevant when group is in groupMode
+  //groupSetting[group] if groupMode handle special
+  //if not groupMode then toggle the state
+  if groupSetting[groupNum] = groupMode
+    
+    if padNumber <> groupActivePad[groupNum] //if pad not already active
+      groupStateChange =1
+      buttonStateChange = 1
+      sendNote = 1
+      
+    else //padNumber <> groupActivePad[groupNum] . pad was already the active pad in group
+      
+      if groupRetrigger[groupNum]
+        sendNote = 1
+        //log {already active pad, retrigger}
+      else
+        //if we got here a group's active button was pressed and not set to retrigger. so it needs to be turned of
+        groupStateChange =1 
+        buttonStateChange = 1
+      endif //if groupRetrigger[groupNum]
+    
+    endif //if padNumber <> groupActivePad[groupNum] 
+  else //not a group. if groupSetting[groupNum] = groupMode
+    //log {NOT GROUP. button: }, padnumber
+    buttonStateChange = 1
+  endif  //if groupSetting[groupNum] = groupMode
+  ////////////// groupSetting[groupNum] = groupMode
+  /////////////////////////
+    
+  /////////////////////    GROUPSTATECHANGE
+  //if this is a group and the state changed
+  if groupStateChange //the pad is in a group and needs to be updated  
+    
+    //  deactivate old active pad
+    LatchPad groupActivePad[groupNum],0
+    if groupActivePad[groupNum] > -1
+      padtoUpdate = groupActivePad[groupNum]
+      //log {group. turning off old pad}
+      call @updatePadColor
+    endif
+  
+    if groupActivePad[groupNum]=padNumber and not groupRetrigger[groupNum]
+      groupActivePad[groupNum] = -1
+    elseif (groupActivePad[groupNum]<>padNumber) 
+      //  activate new pad     
+      LatchPad padNumber,1
+      groupActivePad[groupNum] = padNumber
+      padToUpdate = padNumber
+      call @updatePadColor
+    endif//groupActivePad[groupNum]=padNumber....
+  
+  elseif buttonStateChange //if groupStateChange 
+    //log {non-group event}
+    LatchPad padNumber, not (PadState padNumber)
+    padToUpdate = padNumber
+    call @updatePadColor
+  endif //if groupStateChange
+  /////////////////////    GROUPSTATECHANGE
+  
+  //if the new state will be on then sendNote = 1
+  //note retrigger only applies in groups at this time
+  if (padState padNumber) and (buttonStateChange or groupRetrigger[groupNum])
+    sendNote = 1
+    //log {mark note for sending}
+  endif
+  
+  ///////////
+  if buttonStateChange and not(padState padNumber) and (padOffMessage[padNumber]>-1)
+    //button toggled off and need
+    padToSend = padNumber
+    if forwardPadOnEvents
+      call @forwardPadEvent
+    endif 
+  endif //if buttonStateChange
+  //////
+  
+  
+  if sendNote and forwardPadOnEvents
+    padToSend = padNumber
+    call @forwardPadEvent
+  endif // if sendNote
+@end
+
+  
+@onMidiNoteOn
+  //when a note comes in that corresponds to a pad
+  //toggle the pad state in Mozaic and the LED color
+  //pads send notes. Top row is 96-103.Bottom row: notes 112-119
+
+  //if note corresponds to one of the 16 pads on the LK
+  //the roundbuttons are 104 (top) and 120 (bottom)
+  if pageNum=padsPage
+    if MIDINote>=lowestPad and MIDINote<=highestPad and midiToPad[MIDINote-lowestPad]>=0
+        call @handleLKeyPadEvent
+    elseif roundButtonsPass and (MIDINOTE = roundButtonTop or MIDINOTE = roundButtonBottom)
+        SendMIDINoteOn padEventChan, MIDINote, MIDIvelocity
+        cPad=MIDINote
+        call @roundButtonDown //handles any changes of LED color needed
+    endif //if ((MIDINote>=lowestPad) ....
+  elseif page = settingsPage1
+    if MIDINote>=lowestPad and MIDINote<=highestPad and midiToPad[MIDINote-lowestPad]>=8
+      //this is the lower row notes. any lower row button tells us to use dials for note off color
+      midiPadDown = midiToPad[MIDINote-lowestPad]
+      //log {MIDIPADDOWN: },midiPadDown
+    endif
+  endif
+@end //@onMidiNoteOn
+
+@roundButtonDown
+  // in: cPad
+  if cPad = roundButtonTop or cPad = roundCCTop
+    colorIndex = roundButtonTopColor[1]
+    call @colorLED
+  elseif cPad = roundButtonBottom or cPad = roundCCBottom
+    colorIndex = roundButtonBottomColor[1]
+    call @colorLED
+  endif
+@end
+
+@roundButtonRelease
+  // in: cPad
+  if cPad = roundButtonTop or cPad = roundCCTop
+    colorIndex = roundButtonTopColor[0]
+  elseif cPad = roundButtonBottom or cPad = roundCCBottom
+    colorIndex = roundButtonBottomColor[0]
+    call @colorLED
+  endif
+@end
+
+@forwardPadNoteOff
+  //padNumber has been set 0 - 15
+  groupNum = padGroup[padNumber]
+  if groupMIDIchan[groupNum]>-1
+    useChan = groupMIDIchan[groupNum]
+  else
+    useChan = padEventChan
+  endif
+  
+  if padSendUp[padNumber] 
+    if (padSendType[padNumber]>-1) //sendcc
+      sendMIDICC useChan, padSendType[padNumber], 0
+    else
+      if groupStartNote[groupNum]>-1
+        noteToSend = -1 * padSendType[padNumber] //call @calcAltNoteNum
+      else
+        noteToSend = MIDINote
+      endif
+      sendMIDINoteOff useChan,noteToSend,0
+    endif //if padSendType >-1
+  endif 
+@end
+
+@onMidiNoteOff
+mynote=MIDINote
+
+if pageNum=padsPage  
+  //If the MIDINote corresponds to one of the pads, handle it
+  
+  if MIDINote>=lowestPad and MIDINote<=highestPad and (0 <= midiToPad[MIDINote-lowestPad])
+    call @lkeyNotetoPadNumber //setspadnumber
+    call @forwardPadNoteOff
+    // if padSendup >-1
+    
+    //if the pad is a momentaryType, unlatch the pad and send the off color
+    if padButtonType[padNumber] = momentaryType   
+      LatchPad padNumber, 0
+      padToUpdate=padNumber
+      call @updatePadColor
+    endif 
+  elseif (MIDINOTE = roundButtonTop or MIDINOTE = roundButtonBottom)
+    if roundButtonsPass 
+      sendMIDINoteOff padEventChan, MIDINote, 0
+      cPad=MIDINote
+      call @roundButtonRelease
+    endif
+    if navButtons
+      call @nextConfig
+    endif
+  endif // if MIDINote>=lowestPad etc
+elseif pagenum = settingsPage1
+    if MIDINote>=lowestPad and MIDINote<=highestPad and (8 <= midiToPad[MIDINote-lowestPad])
+      //this is the lower row notes
+      midiPadDown = -1
+      //log {MIDIPAD CLEARED}
+    endif
+endif//padsPage
+
+if kbdModel=10
+   // refresh Arturia LED when a pad was released
+   if MIDINote>=lowestPad and MIDINote<=highestPad
+      call @refreshLED
+   endif
+endif
+
+@end
+
+@forwardMIDIcc
+  //assumes dialnum is set
+  if ccForward and dialNum>=0
+    sendMidiCC ccDialChan, ccOut[dialNum],mbyte
+  else //one of round buttons or track or scene buttons was pressed
+    
+    // sendMidiCC padEventChan, ccKeys[dialNum], mbyte // forward row2 of Arturia rotaries!
+    // sendMidiCC padEventChan, MIDIByte2, mbyte  // forward ALL other Arturia rotaries!
+  endif
+@end
+
+@onMIDICC
+  mbyte=MIDIByte3
+  
+  // process relative movement on Arturia
+  if kbdModel=10
+     delta=0
+     for i=0 to maxRelativeCCs
+        if MIDIByte2=relativeCC[i]
+           relativeCCVal[i]=relativeCCVal[i]+(mbyte-64)
+           if relativeCCVal[i] < 0
+              relativeCCVal[i]=0
+           elseif relativeCCVal[i] > 127
+              relativeCCVal[i]=127
+           endif
+           mbyte=relativeCCVal[i]
+        endif
+     endfor
+  endif
+  
+  // dialNum = index of cc knob
+  dialNum = -1
+  if MIDIByte2>=lowestCC and MIDIByte2<=highestCC
+     dialNum = ccToPad[MIDIByte2-lowestCC]
+  endif 
+  
+  //ccEventChan
+  if pageNum = padsPage
+    if dialNum = -1
+       if (MIDIByte2 =roundCCTop or MIDIByte2=roundCCBottom) and (mbyte=0 or mbyte=127)
+          if roundButtonsPass 
+             // sendMIDINoteOff padEventChan, MIDINote, 0
+             cPad=MIDIByte2
+             if mbyte=0
+                 call @roundButtonRelease
+             else
+                 call @roundButtonDown
+             endif
+          endif
+          if navButtons and mbyte=0
+             call @nextConfig
+          endif
+       endif
+    else
+       call @forwardMIDIcc
+    endif
+  elseif pageNum = settingsPage1 and dialNum>=0 and dialNum <=7
+    call @handleSettings1Dial    
+  else
+     if MIDIByte2 = sceneUp
+        //value is 0 when button released
+        if mbyte = 0 //then button released
+          call @returnFromSettingsCC 
+        endif
+    endif //MIDIBYTE 2    
+  endif //pageNum == 
+@end
+
+

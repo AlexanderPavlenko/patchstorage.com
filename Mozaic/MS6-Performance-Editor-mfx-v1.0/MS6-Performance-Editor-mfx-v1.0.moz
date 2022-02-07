@@ -1,0 +1,1525 @@
+@Description 
+▫️◽️◻️⬜️ Performance Editor and mfx Spatial Processor for Cheetah MS6  ⬜️◻️◽️▫️
+		
+  The Problem
+  -----------
+  In 1988, the MS6 was unique in offering a 6-voice analog multi-timbral synthesiser for 
+  £299. Unfortunately, its quirky 'octal' interface was a barrier to expoiting it 
+  effectively. It also had just one mono audio output.
+
+  The Solution
+  ------------
+  A combination graphical Performance Editor and a MIDI effect processor that generates
+  pan controller messages associated with the incoming note on message channels.
+  
+  A Caveat
+  --------
+  This performance editor for the Cheetah MS6 multi-timbral synthesizer module requires 
+  the Kristofer Maad v1.3 ROM upgrade and operates on single performance memories.
+  
+  While this combination makes this script rather niche in its applicability, it is offered 
+  as a worked example of using System Exclusive messaging and also integrating -ki's Pad 
+  and Migration includes.
+  
+  Feature Summary
+  ---------------
+  Any change to the app's performance parameter knobs will immediately transmit the 
+  updated app edit buffer to the MS6 performance edit buffer.
+  
+  A single-tap on SHIFT will request a download of either the MS6 performance edit buffer
+  or the performance memory as selected on the top right knob. The app memory must be 
+  set to overwrite using the bottom right knob or a warning will be given and the download 
+  cancelled. 
+  
+  A long hold on SHIFT will upload the app edit buffer to the MS6 performance memory 
+  selected on the top right knob.
+  A warning will be given if no performance memory is selected. 
+  The upload must be confirmed by a double-tap on SHIFT.
+  
+  The bottom right knob has 3 positions: Protected, Overwrite and Init 1; the first 2 are 
+  explained above, the third initialises the app edit buffer to 2 x 3 voice patches and 
+  uploads this performance memory to the MS6 performance edit buffer. Initialisation must
+  be confirmed by a double-tap on SHIFT.
+  
+  The top left knob selects the MS6 Instrument number within the performance to which 
+  the block of 6 parameter edit knobs adjacent apply. 
+  
+  The top and bottom notes of the instrument range may be learned by received MIDI note 
+  number - turn the range top knob fully clockwise or the range bottom knob fully anti-
+  clockwise to enter their learn modes. 
+  
+  The tone number may be selected randomly if its knob is turned fully clockwise and 
+  released. The volume controls for all 6 Instruments are knobs on the bottom row.
+  
+  Above the volume knobs are pan controls. These knobs send a MIDI controller message 
+  to e.g. AUM to create a pan position linked with the Instrument's note-on MIDI channel.
+  panChannel and panController can be set by editing @OnLoad (default 0 (channel 1) 
+  and 10)
+  
+  The bottom left knob when moved off zero will request a status message from the MS6.
+  
+  At the centre position (which can be obtained with a double-tap on the knob), the 
+  editor will import the data buffer and pan kob positions saved in another copy of this 
+  editor. See -ki's Import Manager on PatchStorage for more information. This feature 
+  allows a performance memory state saved with this version of the editor to be brought 
+  into a future update.
+  
+  The editor updates the display, app edit buffer and MS6 with bank and patch (PC) 
+  changes received via MIDI so they are kept aligned. 
+  
+  Received volume controller messages are scaled by the channel-associated performance 
+  instrument volume setting and are passed through to the MS6. 
+  Volume controller messages for channels not included in the performance are passed 
+  without modificatiom.
+  
+  As recommended in the ROM update instructions, it is a good idea to set the MS6's 
+  basic receive channel distinct from any channel used in the performance patches.
+  
+  Protection from corrupted performance data is included for when the MS6 battery-backed 
+  RAM has failed.
+  
+  A full description of the functionality and MIDI implementation is given in the User 
+  Manual also at PatchStorage.
+  
+  Credits and License
+  -------------------
+  Thanks to -ki and Bryan Appel for the Pad and Shift Manager v3.0 and Migration 
+  Manager v1.2 functions incorporated in this editor.
+  
+  License: Creative Commons Attribution Share Alike 4.0 
+@End
+
+@OnLoad
+  call @MigrationManagerInit
+  ShowLayout 1 // knobs
+  BlockSize = 10 // length of repeating unit in sysex performance dump
+  LabelKnob 0, {Inst 1}
+  SetKnobValue 0, 0 // default instrument 1
+  for p = 4 to 9
+    LabelKnob p, {PanCC}, { (}, p - 3, {)} // label 6 pan knobs
+  endfor
+  dispDelay = 0 // how long before message will be displayed e.g. timeout
+  dispIndex = 1 // which message to display
+  sVersion = 0 // MS6 ROM version
+  rxType = 0 // 1 = MS6 Status, 0 = everything else
+  toConfirm = FALSE
+  toConfirmInit = FALSE
+  captureNextNoteForLearn = FALSE
+  
+  // Change next line to pcDownloadMode = TRUE to enable function
+  pcDownloadMode = FALSE // when TRUE, auto request performance memory on receipt of a bank 8 program change
+  // Change next line to fControllerFollowNotechannel = TRUE to enable function
+  fControllerFollowNotechannel = FALSE // when TRUE, PB, AT and MOD channelised to follow notes
+  
+  Log SystemTime, {| Auto Download Mode = }, pcDownloadMode
+  Log SystemTime, {| Controller Follow Note Channel 'Live' Mode = }, fControllerFollowNotechannel
+  
+  autoDownload = FALSE // flag to turn off verbose patch request / download sequence
+  
+  panChannel = 0 // channel 1 - change to suit host
+  panController = 10 // change to suit host
+  
+  ReqStatus = [0x36, 0x02,0x00, 0x1F] // sysex strings
+  ReqPerfEditBuf = [0x36, 0x02, 0x00, 0x18, 0x00, 0x00]
+  ReqSinglePerf = [0x36, 0x02, 0x00, 0x18, 0x08, 0x00] // last byte is pp 0 - 63
+  HeadStatus = [0x36, 0x02,0x00, 0x0F]
+  HeadPerfEdit = [0x36, 0x02, 0x00, 0x08, 0x00, 0x00]
+  HeadSinglePerf = [0x36, 0x02, 0x00, 0x08, 0x08, 0x00]
+  iaSysexOutString = [0x36, 0x02, 0x00, 0x0C] // interapp Sysex messaging 0x0C dump ID
+  Init_1 = [0x01, 0x01, 0x01, 0x03, 0x01, 0x08, 0x07, 0x07, 0x0F, 0x01 , 0x01, 0x01, 0x02, 0x03, 0x01, 0x08, 0x07, 0x07, 0x0F, 0x02, 0x01, 0x01, 0x03, 0x00, 0x01, 0x08, 0x07, 0x07, 0x0F, 0x03]
+  Init_1a = [0x01, 0x01, 0x04, 0x00, 0x01, 0x08, 0x07, 0x07, 0x0F, 0x04, 0x01, 0x01, 0x05, 0x00, 0x01, 0x08, 0x03, 0x0B, 0x0F, 0x05, 0x01, 0x01, 0x06, 0x00, 0x03, 0x0C, 0x07, 0x07, 0x0F, 0x06]
+  
+  lastMIDIChannel = 0xFF // use a non-valid channel to indicate not yet assigned
+  lastVolMIDIChannel = 0xFF // use a non-valid channel
+  lastScaledVol = 0xFF // use a non-valid scaled volume
+  lastVol = 0xFF // use a non-valid volume
+  lastControllerMIDIChannel = 0xFF // use a non-valid channel
+  lastReqTime = 0 // used to thin status requests
+  FillArray lastDump,0,66 // used to stop redundant retransmissions
+  FillArray lastIaSysexSend,0,9 // as above
+  FillArray bankSelMSB, 0, 16 // valid 1 to 8 - 8 banks in MS6
+  FillArray bankSelLSB, 0, 16 // MS6 does not use LSB
+  FillArray bSelUpDateReq,FALSE,16 // holds received bank select to action when a PC status received
+  
+  if Unassigned basicRxChannel // use this variable as a test of save state
+    // if NOT state saved, load up initialised data
+    dispInstrument = 1 // first of the 6 MS6 voices
+    basicRxChannel = 16 // used to receive (global) bank changes - updates after status request received
+    Call @myInitialiseData // also unpacks and displays data
+	call @myModeReset // default settings for knobs 10, 11, 21
+  endif
+  
+  Call @myLabelPerformance // label knob 10
+  
+  // Pad and ShiftManager initialisation
+  pmAnalyseTime = 300        // Max delay for a single tap (default was 200)
+  pmExcludePads = [ ]        // Pads that will always do single taps
+  pmExcludeCnt  = 0          // Number of pads with single taps
+  pmManageTimer = NO         // NO when using own timer
+  pmTickInterval = 50        // Timer interval
+  
+  Call @SetupMyTimer
+  Call @PadAndShiftManagerInit
+  
+  mmScriptId    = 0x4200
+  mmScriptTimer = YES  // script does define an OnTimer 
+  Call @MigrationManagerOnLoad // see Migration Manager documentation
+  Call @mySetDelayedMessage1 // to revert initialisation message to default
+@End
+
+@SetupMyTimer
+  SetTimerInterval 40
+  pmTickInterval = 40
+  pmManageTimer = NO
+  StartTimer
+@End
+
+@OnTimer
+if mmIsMigrating
+   Call @MigrationManagerOnTimer  
+else
+   Call @PadAndShiftManagerUpdate
+// Display indexed messages as LabelKnobs banner after dispDelay has elapsed
+   if dispDelay <> 0 // delayed display is active
+     Dec dispDelay
+     if dispDelay = 0 // Showtime!
+       if dispIndex = 1
+         LabelKnobs {MS6 Performance Editor v1.0}
+       elseif dispIndex = 2
+         LabelKnobs {MS6: <R/W Cancelled>}
+		 call @myModeReset
+		 toConfirmInit = FALSE
+		 // then setup a follow on message
+		 Call @mySetDelayedmessage1 // return to performance editor home banner
+       elseif dispIndex = 3
+         LabelKnobs {MS6: <No Response>}
+		 // then setup a follow on message
+		 Call @mySetDelayedMessage1 // return to performance editor home banner
+		 call @myModeReset
+	   elseif dispIndex = 4
+	     LabelKnobs {MS6: <Edit Buffer now initialised>}
+		 Call @myMIDISend // introduce a delay after bank switch
+		 Call @mySetDelayedMessage1 // return to performance editor home banner,
+       endif
+     endif
+   endif
+endif
+@End 
+
+
+@OnMidiNote
+// Channel switching panning
+    if MIDIChannel <> lastMIDIChannel  // and we haven't already processed it
+      FillArray panChannel,0,16
+      for i1 = 0 to 5
+        if InstMIDIChannel[i1] = MIDIChannel // if performance includes received MIDI Channel
+          if Voices[i1] <> 0 // and has voices allocated
+            if panChannel[InstMIDIChannel[i1]] = 0 // if we have not already sent a pan CC for that channel (for any Instrument)
+               SendMIDICC panChannel,panController,GetKnobValue (i1 + 4) // do it
+               lastMIDIChannel = MIDIChannel // update last channel memory 
+               panChannel[InstMIDIChannel[i1]] = 1 // mark pan sent for this channel (this loop}
+            endif
+          endif
+        endif
+      endfor
+     endif
+	 if fControllerFollowNotechannel
+	    if MIDIChannel <> lastControllerMIDIChannel
+	       Call @myResetControllers
+		   lastControllerMIDIChannel = MIDIChannel
+		endif
+	 endif 
+  SendMIDIThru // always pass through MIDI (note on and off)
+  // MIDI note learn for top and bottom note range
+  if captureNextNoteForLearn = TRUE
+     learnedNote = MIDINote
+	 captureNextNoteForLearn = FALSE
+	 if topLimit = TRUE
+	   SetKnobValue 3,TranslateScale learnedNote, 24, 120, 0, 127
+	   call @myTopLimitSend // as if user had moved top limit knob
+	   topLimit = FALSE
+	 endif 
+	 if bottomLimit = TRUE
+	  // SetKnobValue 14,TranslateScale learnedNote, 24, 120, 0, 127
+	      SetKnobValue 14,TranslateScale learnedNote, 23, 119, 0, 127
+	   call @myBottomLimitSend // as if user had moved bottom limit knob
+	   bottomLimit = FALSE
+	 endif
+  endif
+@End 
+
+@OnMidiCC
+// Handle incoming MIDI Volume and bank select messages
+// Pass through incoming MIDI volume controller (0x07) messages scaled by performance vol setting
+// Most code is to prevent unnecessary processing
+// Latch incoming Bank Change MIDI messages for later Program Change processing
+  if MIDIByte2 = 7 // volume
+      volChannelInPerf = FALSE
+      FillArray volChannel,0,16
+      for i1 = 0 to 5 // for each instrument
+        if InstMIDIChannel[i1] = MIDIChannel // if performance includes received MIDI Channel
+          if Voices[i1] <> 0 // and has voices allocated
+		     volChannelInPerf = TRUE
+            if volChannel[InstMIDIChannel[i1]] = 0 // if we have not already sent a vol CC for that channel (for any Instrument)
+               instVol = InstVolume[i1] // get the performance volume setting
+               cVol = MIDIByte3 // get the incoming MIDI volume value
+               Call @myScaleChannelVol
+               if ((lastScaledVol <> scaledVol) or (lastVolMIDIChannel <> MIDIChannel)) // don't resend same value - same channel
+                  SendMIDICC MIDIChannel,7,scaledVol // do it
+                  lastScaledVol = scaledVol // update last scaled value memory
+                  lastVolMIDIChannel = MIDIChannel // update last channel memory 
+                  volChannel[InstMIDIChannel[i1]] = 1 // mark vol sent for this channel (this loop)
+               endif
+            endif
+          endif
+        endif
+      endfor
+	  if volChannelInPerf = FALSE // pass thru volume cc on channels not in the performance
+	     if ((lastVol <> MIDIByte3) or (lastVolMIDIChannel <> MIDIChannel)) // don't resend same value - same channel
+	         SendMIDICC MIDIChannel,7,MIDIByte3 
+		     lastVol = MIDIByte3
+		     lastVolMIDIChannel = MIDIChannel
+		 endif 
+	  endif
+  // Bank select 7 bit 1-8,  14-bit 128 - 1024 in 128 steps
+  // Store and flag so can be actioned by next PC command
+  elseif MIDIByte2 = 0 // CC#0
+     bankSelMSB[MIDIChannel] = MIDIByte3 // bank select
+     bSelUpDateReq[MIDIChannel] = TRUE
+  elseif MIDIByte2 = 32 // CC#32 not used by MS6 but handle as an example
+     bankSelLSB[MIDIChannel] = MIDIByte3 // bank select
+     bSelUpDateReq[MIDIChannel] = TRUE
+  elseif (fControllerFollowNotechannel  and  (MIDIByte2 = 1)) // mod wheel
+        SendMIDIThruOnCh lastControllerMIDIChannel
+  else
+     SendMIDIThru // pass through MIDI (other controllers)
+  endif
+@End
+
+
+@myScaleChannelVol
+// multiply a 8 bit channel volume by a 4 bit instrument volume and scale 0 to 127
+   scaledVol = Round (TranslateScale (cVol * InstVol),0,1905,0,127) // 127 x 155
+@end
+
+@OnMidiInput
+  // Handle Program Change
+  // Convert bank and PC messages to performance parameters except ones received on basicRxChannel which are passed thru
+  // careful as this overlaps with above handlers - thru can duplicate
+  // Doesn't change patch when no voices allocated 
+   if MIDICommand = 0xC0 // program change
+     // check if channel matches that of one or more instruments
+        for i = 0 to 5
+           if InstMIDIChannel[i] = MIDIChannel
+              if Voices[i] <> 0 // and has voices allocated
+                 d1 = (Div MIDIByte2,8) + 1 // get program number
+                 d2 = (MIDIByte2 % 8) + 1 // split into MS6 format
+                 data[(i * BlockSize) + 6] = d1 // update data array
+                 data[(i * BlockSize) + 7] = d2
+                 // check for a pending bank select update
+                 if bSelUpdateReq[MIDIChannel]
+                    data[(i * BlockSize) + 8] = bankSelMSB[MIDIChannel] // update data array
+                    bSelUpdateReq[MIDIChannel] = FALSE // clear  pending
+                    // not processing lsb as MS6 doesn't use 14-bit bank values
+                 endif
+               endif
+            endif
+         endfor
+         // once tone and bank updated, process as if a received dump
+         // if no voices allocated, @myMIDISsend will catch no change
+         Call @myUnpackDump // update parameter arrays
+         Call @myDisplayData // Set the knob positions and label them
+         Call @myMIDISend // send to edit buffer so you can audition it
+         // Thru a PC and bank on basic receive channel to allow remote switching of performances. Note basicRxChannel should be distinct from any channel used within the performance patches
+         if MIDIChannel = basicRxChannel - 1
+            if bSelUpdateReq[basicRxChannel - 1] // check for pending bank change
+               SendMIDIBankSelect (basicRxChannel - 1),bankSelMSB[MIDIChannel],bankSelLSB[MIDIChannel]
+               bSelUpdateReq[basicRxChannel - 1] = FALSE
+            endif
+            SendMIDIProgramChange (basicRxChannel - 1),MIDIByte2
+			if pcDownloadMode = TRUE
+			   autoDownload = TRUE // so request and download patch silently
+			   memLock = FALSE // unprotect app buffer
+			   toConfirm = FALSE // bypass manual confirmation of download
+			   perfNum = MIDIByte2 + 1  // incoming Program Change perfNum 0 = edit buffer
+			   Call @myLabelPerformance // calculates ofset octal from perfNum
+			   Call @onShiftSingleTap // request perf memory
+			   memLock = TRUE
+			   autoDownload = FALSE
+			endif
+         endif
+   elseif fControllerFollowNotechannel
+	  if MIDICommand = 0xD0 // Aftertouch
+	     SendMIDIThruOnCh lastControllerMIDIChannel			  
+      elseif MIDICommand = 0xE0 // Pitchbend 
+	     SendMIDIThruOnCh lastControllerMIDIChannel
+      endif			 		 
+   elseif MIDICommand = 0xD0 // Aftertouch
+	  SendMIDIThru
+   elseif MIDICommand = 0xE0 // Pitchbend 
+	  SendMIDIThru
+   endif
+@End
+
+@OnShiftSingleTap
+// Requests dumps if app memory in overwrite mode
+// Requests edit buffer or single performance depending on setting of performance #
+  if memLock = TRUE
+     LabelKnobs {MS6: <App buffer protected>}
+	 Call @myModeReset
+     Call @mySetDelayedMessage1 // Display Performance Editor home after delay
+  else
+    if ((toConfirm = FALSE) and (toConfirmInit = FALSE)) // block singletaps when doubles are expected
+       if perfNum = 0
+         // Needs to be in performance mode
+         LabelKnobs {MS6: <Edit buffer requested>}
+         log SystemTime, {| MS6: <Edit buffer requested>}
+		 SendSysex ReqPerfEditBuf, 6
+       else
+         if autoDownload = FALSE // only label for manual downloads
+		    LabelKnobs {MS6: <Performance# }, perfDigit1, perfDigit2, {(},perfNum,{) requested>} // perfDigits calculated in earlier call to @myLabelPerformance
+		 endif
+		 Log SystemTime, {| MS6: <Performance# }, perfDigit1, perfDigit2, {(},perfNum,{) requested>}
+         ReqSinglePerf[5] = perfnum - 1
+         SendSysex ReqSinglePerf, 6 // sysex array is zero based
+       endif
+	   Call @mySetDelayedMessage3 // tee up no response - cancelled by reception
+    endif 
+  endif
+@End
+
+@OnShiftDoubleTap
+// Sends a performance dump to MS6 - shift doubletap confirms shift hold
+// toConfirm blocks this until shifthold has been actioned
+// Double-tap detection also used to confirm app and MS6 edit buffer initialisation.
+  if toConfirmInit = TRUE
+     Call @myInitialiseData
+     Call @myInitialiseMS6 
+     LabelKnobs {MS6: <Initialising MS6 ... >}
+	 Log SystemTime, {| MS6: Initialising MS6 ...}
+	 Call @myModeReset
+	 Call @mySetDelayedMessage4 // return to home screen banner
+	 toConfirmInit = FALSE
+   elseif toConfirm = TRUE
+     LabelKnobs {MS6: Performance }, perfDigit1, perfDigit2, {(},perfNum,{) sent}
+	 Log SystemTime, {| MS6: Performance }, perfDigit1, perfDigit2, {(},perfNum,{) sent} 
+     Call @mySetDelayedMessage1 // return to home screen banner
+     data[4] = 8 // format data header for single performance upload
+     data[5] = perfNum - 1
+     SendSysex data,66
+     toConfirm = FALSE
+     data[4] = 0 // restore data header for performance edit buffer 
+     data[5] = 0
+	 FillArray lastDump,0,66 // clear to make sure data seen as a change by @myMIDISend	 
+	 Call @myMIDISend // send to MS6 edit buffer so you can audition it
+	 Call @myModeReset
+  endif 
+@End
+
+@OnShiftHold
+  if perfNum = 0 // edit buffer
+     LabelKnobs {MS6: <Select Performance Mem# first>}
+	 Call @mySetDelayedMessage1 // return to home screen banner
+  else
+     toConfirm = TRUE
+     LabelKnobs {MS6: Double-tap SHIFT to confirm write to },perfDigit1,perfDigit2,{(},perfNum,{)}
+     Call @mySetDelayedMessage2  //display 'cancelled' unless @OnShiftDoubleTap called which resets cancel countdown
+  endif
+@End
+
+@OnSysex
+// Note as of Mozaic v 1.3.9, Sysex messages greater than 1024 bytes are ignored so there is no
+// need to handle manually triggered bulk Sysex dumps from the MS6. 
+  dispDelay = 0 // cancel Pending timeout set away in dump request routines
+  ReceiveSysex sysexData
+	length = SysexSize
+	Log SystemTime, {| MS6: The received Sysex data is }, length, { bytes long. } 
+	if sysexData[0] = 0x36 // Cheetah Marketing I.D. Code 
+	  if sysexData[1] = 0x02 // Product Design Code
+	    if sysexData[2]= 0x00 // MS6 Data packet
+		   if sysexData[3] = 0x08 // MS6 dump data
+		      if sysexData[4] = 0x08 // MS6 single performance
+			  // copy sysexdata to data array for verification and onward processing
+			     CopyArray sysexData,data,length
+				 rxType = 0 // not status
+				 perfNum = sysexdata[5] + 1
+				 Call @myConvertPerfNum
+		      elseif ((sysexData[4] > 0) and (sysexData[4] < 8)) // MS6 single tone
+			     Log SystemTime, {| Thru single tone}
+			     SendSysexThru
+				 Exit
+			  elseif ((sysexData[4] = 0) and (sysexData[5] = 0)) // MS6 performance edit buffer
+		      // copy sysexdata to data array for verification and onward processing	  
+			     CopyArray sysexData,data,length
+				 rxType = 0 // not status
+				 perfNum = 0
+				 Call @myConvertPerfNum
+			  elseif ((sysexData[4] = 0) and (sysexData[5] > 0)) // MS6 tone edit buffer
+			     Log SystemTime, {| Thru tone edit buffer}
+			     SendSysexThru
+				 Exit
+			  endif
+		    elseif sysexData[3] = 0x0F // MS6 status
+		        // copy sysexdata to statusData array for verification and onward processing
+			   CopyArray sysexData,statusData,length
+			   rxType = 1 // status
+			elseif sysexData[3] = 0x18 // Dump request
+			    Log SystemTime, {| Thru dump requests}
+			    SendSysexThru
+				Exit
+			elseif sysexData[3] = 0x1F // Dump request
+			    Log SystemTime, {| Thru status dump request}
+			    SendSysexThru
+				Exit	
+		    endif
+	     endif
+	   endif
+   endif
+  // ***********
+  if rxType = 1 //Status
+	call @myUnpackStatus // includes call to @myModeReset
+    rxType = 0 // reset receive type
+  else
+  // Some duplication of identification / verification here - belt and braces
+  // Construct the header template to compare rx data against
+    if perfNum = 0 // edit buffer
+      CopyArray HeadPerfEdit,header
+    else
+      CopyArray HeadSinglePerf,header
+      header[5] = perfNum - 1 // add patch # 0 - 63
+    endif
+    found = YES
+  // check the header... 
+    for i = 0 to 5
+      if data[i] <> header[i] 
+       found = NO
+      endif 
+    endfor
+    if found
+    // Do something with this Sysex
+      if perfNum = 0 // edit buffer
+         LabelKnobs {MS6: <Edit buffer data received>} 
+		 Log SystemTime, {| MS6: <Edit buffer data received>} 
+      else
+         LabelKnobs {MS6: Performance data },perfDigit1,perfDigit2,{(},perfNum,{)}, { received}
+		 Log SystemTime, {| MS6: Performance data },perfDigit1,perfDigit2,{(},perfNum,{)}, { received}
+		 data[4] = 0 // restore data header for performance edit buffer 8 to 0
+		 data[5] = 0 // perfNum - 1 to 0
+		 FillArray lastDump,0,66 // clear to make sure data seen as a change by @myMIDISend
+		 if autoDownload = FALSE // no need if download triggered from a PC message
+		    Call @myMIDISend // send to MS6 edit buffer so you can audition it
+		 endif
+      endif
+	  Call @mySetDelayedMessage1
+	  Call @myModeReset // includes mem protect
+      Call @myUnpackDump // update parameter arrays
+      Call @myDisplayData // Set the knob positions and label them
+	  Call @myInterAppSysexSend // synch Control Panel app
+    else
+    // These are not the bytes you're looking for
+      log SystemTime, {| MS6: <wrong data type received> }
+      LabelKnobs {MS6: <wrong data type received>}
+	  Call @mySetDelayedMessage1
+	  Call @myModeReset
+    endif 
+  endif
+@End
+
+@myUnpackDump
+ // Unpack bulk dump to individual arrays and clip to guard against corrupted memory
+    sumVoices = 0
+    for InstNum = 0 to 5
+    
+      data[(InstNum * BlockSize) + 6] = Clip data[(InstNum * BlockSize) + 6],1,8
+      data[(InstNum * BlockSize) + 7] = Clip data[(InstNum * BlockSize) + 7],1,8
+      ToneNumber[InstNum] = (data[(InstNum * BlockSize) + 6] * 8) + data[(InstNum * BlockSize) + 7] - 1 // display 11 to 88
+      
+      data[(InstNum * BlockSize) + 8] = Clip data[(InstNum * BlockSize) + 8], 1, 7
+      BankNumber[InstNum] = data[(InstNum * BlockSize) + 8]
+	  if BankNumber[InstNum] = 7
+	     ToneNumber[InstNum] = Clip ToneNumber[InstNum],1,32 // bank 7 only has 32 patches
+	  endif
+     
+      data[(InstNum * BlockSize) + 9] = Clip data[(InstNum * BlockSize) + 9], 0, 6
+      Voices[InstNum] = data[(InstNum * BlockSize) + 9]
+      // limit allocated voices to 6 if data corrupted
+      sumVoices = sumVoices + Voices[InstNum]
+      if sumVoices > 6
+         Voices[InstNum] = 0
+         data[(InstNum * BlockSize) + 9] = 0
+      endif
+      
+      data[(InstNum * BlockSize) + 10] = Clip data[(InstNum * BlockSize) + 10],1,7
+      data[(InstNum * BlockSize) + 11] = Clip data[(InstNum * BlockSize) + 11],0,15
+      MIDIBottomLimit[InstNum] = (data[(InstNum * BlockSize) + 10] * 16) + data[(InstNum * BlockSize) + 11] // C0 to B7
+      
+      data[(InstNum * BlockSize) + 12] = Clip data[(InstNum * BlockSize) + 12],1,7
+      data[(InstNum * BlockSize) + 13] = Clip data[(InstNum * BlockSize) + 13],0,15
+      MIDITopLimit[InstNum] = (data[(InstNum * BlockSize) + 12] * 16) + data[(InstNum * BlockSize) + 13] // C0 to B7  
+          
+      data[(InstNum * BlockSize) + 14] = Clip data[(InstNum * BlockSize) + 14], 0, 15
+      InstVolume[InstNum] = data[(InstNum * BlockSize) + 14]
+      
+      data[(InstNum * BlockSize) + 15] = Clip data[(InstNum * BlockSize) + 15], 0, 15
+      InstMIDIChannel[InstNum] = data[(InstNum * BlockSize) + 15]
+      
+    endfor
+@End
+
+@myDisplayData
+// display received data according to the instrument selected on knob 0
+  DispInstrument = Round (TranslateScale (GetKnobValue 0), 0, 127, 1, 6)
+  LabelKnob 0, {Inst } , DispInstrument
+//
+  SetKnobValue 1, TranslateScale ToneNumber[DispInstrument - 1], 8, 72, 0, 127 // random at full CW
+  Call @myLabelTone
+//
+  SetKnobValue 2, TranslateScale Voices[DispInstrument - 1], 0, 6, 0, 127
+  Call @myLabelVoices
+//
+  SetKnobValue 3, TranslateScale MIDITopLimit[DispInstrument - 1], 24, 120, 0, 127 // learn at full CW
+  Call @myLabelTopLimit
+//
+  SetKnobValue 12, TranslateScale BankNumber[DispInstrument - 1], 1, 7, 0, 127
+  Call @myLabelBank
+//
+  SetKnobValue 13, TranslateScale InstMIDIChannel[DispInstrument - 1], 0, 15, 0, 127
+  Call @myLabelChannel
+//
+  SetKnobValue 14, TranslateScale MIDIBottomLimit[DispInstrument - 1], 23, 119, 0, 127 // learn at full ACW
+  Call @myLabelBottomLimit
+
+  for InstNum = 0 to 5
+    SetKnobValue (15 + InstNum), TranslateScale       InstVolume[InstNum], 0, 15, 0, 127
+    LabelKnob (15 + InstNum), {Vol }, InstNum + 1, {: }, InstVolume[InstNum]
+  endfor
+@End
+
+@OnKnobChange
+  if LastKnob = 0
+     call @myDisplayData
+  elseif LastKnob = 1
+     call @myToneSend
+  elseif LastKnob = 2
+     call @myVoicesSend
+  elseif LastKnob = 3
+     call @myTopLimitSend
+  elseif ((LastKnob >3) and (LastKnob <10))
+     call @myPanSend
+  elseif LastKnob = 10
+     Call @myPerfSelect
+  elseif LastKnob = 11
+     Call @myImportSwitch
+  elseif LastKnob = 12
+     call @myBankSend
+  elseif LastKnob = 13
+     call @myChannelSend
+  elseif LastKnob = 14
+     call @myBottomLimitSend
+  elseif ((LastKnob >14) and (LastKnob <21))
+     volKnob = LastKnob
+     call @myVolumeSend
+  elseif LastKnob = 21
+     call @myMemLock
+  endif
+  if ((LastKnob < 3) or (LastKnob = 12) or (LastKnob = 13)) // call for change to display, tone, #voices, bank or channel
+      Call @myInterAppSysexSend
+  endif
+@End 
+
+@myToneSend
+  // User has changed Tone knob
+  // Full clockwise generates a random tone number
+  if BankNumber[DispInstrument - 1] = 7 // bank 7 only 32 slots
+     tempToneNumber = Round (TranslateScale (GetKnobValue 1), 0, 127, 8, 40) // 39 + 1 for random
+     if tempToneNumber = 40
+	    tempToneNumber = Random 8,39
+		SetKnobValue 1,TranslateScale tempToneNumber, 8, 40, 0, 127
+	 endif
+  else // banks 1 - 6 have 64 slots
+     tempToneNumber = Round (TranslateScale (GetKnobValue 1), 0, 127, 8, 72) // 71 + 1 for random
+	  if tempToneNumber = 72
+	    tempToneNumber = Random 8,71
+		SetKnobValue 1,TranslateScale tempToneNumber, 8, 72, 0, 127
+	  endif
+  endif
+  ToneNumber[DispInstrument - 1] = tempToneNumber
+  // Convert to 'octal' across 2 bytes
+  Call @myLabelTone // also calculates Digit1 and Digit2
+// keep local arrays updated so edits can be returned to without having to download MS6 edit buffer again
+
+// update midibuffer and send
+  data[((DispInstrument - 1) * BlockSize) + 6] = Digit1
+  data[((DispInstrument - 1) * BlockSize) + 7] = Digit2
+  Call @myMIDISend
+@End
+
+@myVoicesSend
+// User has changed Voices knob
+  tempVoices = Round (TranslateScale (GetKnobValue 2), 0, 127, 0, 6)
+// First check there will be sufficient voices available
+  voiceCount = 0
+  for j = 0 to 5
+     voiceCount = voiceCount + Voices[j]
+  endfor
+  voiceCount = voiceCount - Voices[DispInstrument - 1] + tempVoices
+// if ok update Voices allocated to current instrument
+  if voiceCount < 7
+     Voices[DispInstrument - 1] = tempVoices
+  data[((DispInstrument - 1) * BlockSize) + 9] = Voices[DispInstrument - 1]
+     Call @myMIDISend
+   Else 
+     SetKnobValue 2, TranslateScale Voices[DispInstrument - 1], 0, 6, 0, 127
+     LabelKnobs {MS6: <Voice Count Exceeded>} 
+     Call @mySetDelayedMessage1 // display home screen banner after error message read
+   Endif
+   Call @myLabelVoices 
+@End
+
+@myTopLimitSend
+  // User has changed Top Limit knob
+  tempTopLimit = Round (TranslateScale (GetKnobValue 3), 0, 127, 24, 120) 
+  if tempTopLimit = 120 // full clockwise = learn
+     call @myMIDILearnTopNote
+  else
+  MIDITopLimit[DispInstrument - 1] = tempTopLimit
+  Call @myLabelTopLimit
+// Convert to hex across 2 bytes
+  Digit1 = Div MIDITopLimit[DispInstrument - 1], 16
+  Digit2 = MIDITopLimit[DispInstrument - 1] - (Digit1 * 16)
+// update midibuffer and send
+  data[((DispInstrument - 1) * BlockSize) + 12] = Digit1
+  data[((DispInstrument - 1) * BlockSize) + 13] = Digit2
+  Call @myMIDISend
+  endif
+@End
+
+@myPanSend
+// User has adjusted Instrument pan position
+  SendMIDICC panChannel,panController,GetKnobValue (LastKnob)
+  lastMIDIChannel = InstMIDIChannel[LastKnob - 4] // used by Note On channel auto panning
+@End
+
+@myBankSend
+// User has changed Bank knob
+  BankNumber[DispInstrument - 1] = Round (TranslateScale (GetKnobValue 12), 0, 127, 1, 7)
+  Call @myLabelBank
+  data[((DispInstrument - 1) * BlockSize) + 8] = BankNumber[DispInstrument - 1]
+  Call @myMIDISend
+@End
+
+
+@myChannelSend
+// User has changed Channel knob
+  InstMIDIChannel[DispInstrument - 1] = Round (TranslateScale (GetKnobValue 13), 0, 127, 0, 15)
+  Call @myLabelChannel
+  data[((DispInstrument - 1) * BlockSize) + 15] = InstMIDIChannel[DispInstrument - 1]
+  Call @myMIDISend
+@End
+
+@myBottomLimitSend
+  // User has changed BottomLimit knob
+ tempBottomLimit = Round (TranslateScale (GetKnobValue 14), 0, 127, 23, 119) // 23 = C0 - 1 for learn
+  if tempBottomLimit = 23 // full anticlock = learn
+     call @myMIDILearnBottomNote
+  else
+  MIDIBottomLimit[DispInstrument - 1] = tempBottomLimit
+  Call @myLabelBottomLimit
+// Convert to hex across 2 bytes
+  Digit1 = Div MIDIBottomLimit[DispInstrument - 1], 16
+  Digit2 = MIDIBottomLimit[DispInstrument - 1] - (Digit1 * 16)
+// update midibuffer and send
+  data[((DispInstrument - 1) * BlockSize) + 10] = Digit1
+  data[((DispInstrument - 1) * BlockSize) + 11] = Digit2
+  Call @myMIDISend
+  endif
+@End
+
+@myVolumeSend
+// User has changed a Volume knob
+  InstVolume[volKnob - 15] = Round (TranslateScale (GetKnobValue volKnob), 0, 	127, 0, 15)
+	  LabelKnob volKnob, {Vol }, volKnob - 14, {: }, InstVolume[volKnob - 15]
+  data[((volKnob - 15) * BlockSize) + 14] = InstVolume[volKnob - 15]
+  Call @myMIDISend
+@End
+
+@myMIDISend
+    // only transmit app edit buffer when data has changed 
+	// knob movement creates multiple @OnKnobChange calls without scaled values changing
+    same = YES
+    for idx = 0 to 65 
+      if data[idx] <> lastDump[idx] 
+         same = NO
+      endif 
+    endfor
+    if same = NO
+   	   log SystemTime, {| MS6: Bulk dump sent}
+       SendSysex data, 66 // buffer
+       // maintain a copy of last sent for comparison
+       CopyArray data,lastDump,66
+    endif
+      
+@End
+
+@myPerfSelect
+// User has changed the source / destination of the performance patch
+// Internally, 0 is edit buffer, 1 - 64 are performance memories 
+// - these need to have 1 substracted prior to communicatiion with the MS6
+  perfNum = Round (TranslateScale (GetKnobValue 10), 0, 127, 0, 64)
+  Call @myLabelPerformance
+@End
+  
+@myMemLock
+// User has changed the memory protect setting
+mlFunction = Round (TranslateScale (GetKnobValue 21), 0, 127, 1, 3)
+  if mlFunction = 1
+     Call @myModeReset // includes memLock = TRUE
+  elseif mlFunction = 2
+     memLock = FALSE
+     LabelKnob 21, {Overwrite}
+  elseif mlFunction = 3
+     // ask for confirmation as overwites app and MS6 edit buffers
+	 toConfirmInit = TRUE
+	 LabelKnobs {MS6: Double-tap SHIFT to confirm init of app and MS6}
+	 LabelKnob 21,{Init 1}
+	 Call @mySetDelayedMessage2 // tee-up to display 'cancelled' unless @OnShiftDoubleTap called which resets delay countdown
+  endif
+@End
+
+@myInitialiseData
+   // Initialised array > 64 long crashes Mozaic
+   // Data array corrupts after 40 odd values
+   // so do init in 2 halves as workaround
+   
+   CopyArray HeadPerfEdit,data,6
+   CopyArray Init_1,data[6],30
+   CopyArray Init_1a,data[36],30
+   
+   Call @myUnpackDump
+   Call @myDisplayData
+   Call @myInterAppSysexSend // sync editor focus to other compatible apps
+   
+   for p = 4 to 9
+      SetKnobValue p,64 // centre pan knobs
+   endfor
+   SendMIDICC panChannel,panController,64 // send centre pan message
+   
+   // <Feed Me> indicates an action needs to be taken to align the App and the Hardware
+   LabelKnobs {MS6 Performance Editor v1.0 <Feed Me>} // 'splash screen'
+   
+   Log SystemTime, {| MS6: data initialised, }
+   
+@End
+
+@myInitialiseMS6
+   // Switch MS6 bank to 8, select patch 11 (1) and upload initialised performance into edit buffer
+   // SendMIDIBankSelect chan,msb,lsb NOTE: this does not agree Bram docs v1.3 - has 3rd param as delay
+   // Audiob.us forum wim Feb 2020 suggests Bram doc needs update. 
+   Log SystemTime, {| MS6: Sending Bank Select 8 and Program Change 0}
+   SendMIDIBankSelect (basicRxChannel - 1), 8, 0 // bank 8 performance mode, then perf 11 (PC 0)
+   SendMIDIProgramChange (basicRxChannel - 1), 0 // get MS6 listening for performance Sysex
+   // Need to zero lastDump as a precaution so the init patch seen as different and sent.
+   FillArray lastDump,0,66
+   // Found that System Exclusive is given priority over channel messages so for correct operation
+   // a delay is required after bank select + program change and before the sysex dump
+   Call @mySetDelayedMessage4 // call myMIDISend after a delay (see @OnTimer)
+   @End
+
+@myModeReset
+// Provides a unified reset for the 3 mode contols: 
+// 1) Performance memory # / edit buffer (knob 10)
+// 2) Status / Migrate switch (knob 11)
+// 3) Protect / Overwrite / Initialise (knob 21)
+// This routine is called after the following timeout error conditions:
+//    No SHIFT-DOUBLE-TAP confirmation of SHIFT-HOLD for writing to MS6
+//    No SHIFT-DOUBLE-TAP confirmation of selection of INIT 1
+//    No data receipt from MS6 following request for status or performance memory
+
+// USING TranslateScale is a bit OTT for setting knobs to zero but may assist maintenance
+
+LabelKnob 10,{eBuffer}
+SetKnobValue 10,TranslateScale 0,0,127,0,64 // 0
+LabelKnob 11,{St/Import}
+SetKnobValue 11,TranslateScale 0,0,127,0,1 // 0
+LabelKnob 21,{Protected}
+SetKnobValue 21,TranslateScale 0,0,127,0,2 // 0
+
+perfNum = 0 // MS6 edit buffer rather than a numbered performance memory
+memLock = TRUE // block download request for performance memory from MS6
+
+@End
+
+@myImportSwitch
+// User has changed the import switch
+// knob will be 11 to jump here
+   _val  = GetKnobValue 11 // not a Spinal Tap reference
+
+   if _val >= 64    // IMPORT knob with double-tap feature
+     SetKnobValue 11, 127              // Turn knob to full 'on' position
+     LabelKnobs {MS6: <Waiting for import data>}   
+     Call @MigrationManagerOnImport   // Call the import manager
+    
+ // status function on knob 11 low end - request if previous request greater than 500mS ago - prevent redundant cascade
+
+    elseif _val < 64 and _val > 5	
+	  nowTime = SystemTime
+	  if nowTime > (lastReqTime + 500) // block requests within 500 mS
+        Call @myReqStatus 
+        Log SystemTime, {| MS6: <Status Requested>}
+		LabelKnobs {MS6: <Status Requested>}
+		Call @mySetDelayedMessage3 // tee-up timeout message unless reset by received status
+		lastReqTime = nowTime // update timestamp
+	  else  
+		SetKnobValue 11, 0 // turn knob to off
+      endif
+   endif
+@End
+
+@myReqStatus
+  rxType = 1 // status expected - picked up in @OnSysex
+  SendSysex ReqStatus,4 // fire request sysex string
+@end
+
+@myUnpackStatus
+  found = YES
+  // check the header... 
+  for i = 0 to 3
+    if statusData[i] <> HeadStatus[i] 
+     found = NO
+    endif 
+  endfor
+  if found
+     Log SystemTime, {| MS6: Status Received }
+	 sVersion = statusData[4]
+	 vDigit1 = div sVersion, 16 // decode hex
+	 vDigit2 = sVersion - (vDigit1 * 16)
+	 sBank = statusData[5]
+	 sPatch = statusData[6]
+	 patchOctalQuot = (Div sPatch, 8)
+	 patchOctalMod = sPatch - (patchOctalQuot * 8)
+	 basicRxChannel = statusData[7] + 1
+	 Call @myDisplayStatus
+	 Call @mySetDelayedMessage1
+	 Call @myModeReset
+   else
+	 // These are not the bytes you're looking for
+     LabelKnobs {MS6: <wrong data type received>}
+	 Log SystemTime, {| MS6: wrong data type received }
+	 Call @mySetDelayedMessage1
+	 Call @myModeReset
+   endif 
+@end
+
+@myLabelPerformance
+ if (perfNum = 0)
+     LabelKnob 10, {eBuffer}
+  else
+     Call @myConvertPerfNum
+     if autoDownload = FALSE // prevent display flicking as otherwise overwritten in pcDownloadMode
+	    LabelKnob 10, {Prf#}, perfDigit1, perfDigit2, {(},perfNum,{)}
+     endif
+  endif
+@End
+
+@myConvertPerfNum
+// Performance Number to 2 digit offset octal
+   perfDigit1 = (Div (perfNum - 1), 8) + 1 // quotient
+   perfDigit2 = (perfNum - 1) - (perfDigit1 * 8) + 9 // mod
+@End
+
+@myDisplayStatus
+   LabelKnobs {MS6: v}, vDigit1,  {.}, vDigit2, { bank }, sBank, { patch }, (patchOctalQuot + 1), (patchOctalMod + 1), { (}, sPatch + 1, {) rx }, basicRxChannel
+   Log SystemTime, {| MS6: v}, vDigit1,  {.}, vDigit2, { bank }, sBank, { patch }, (patchOctalQuot + 1), (patchOctalMod + 1), { (}, sPatch + 1, {) rx }, basicRxChannel
+@End
+
+@myLabelTone
+  Digit1 = (Div ToneNumber[DispInstrument - 1], 8) // quotient
+  Digit2 = ToneNumber[DispInstrument - 1] - (Digit1 * 8) + 1 // mod
+  LabelKnob 1, {Tone} , Digit1, Digit2, {(},ToneNumber[DispInstrument - 1] - 7,{)}
+  // Digit1 and Digit2 are used on return in @myToneSend
+@End
+
+@myLabelVoices
+  LabelKnob 2, {Voices }, Voices[DispInstrument - 1]
+@end
+
+@myLabelTopLimit
+  LabelKnob 3, {Top }, (NoteName  MIDITopLimit[DispInstrument - 1], NO), (Div MIDITopLimit[DispInstrument - 1],12)-2
+@end
+
+@myLabelBank
+  LabelKnob 12, {Bank }, BankNumber[DispInstrument - 1]
+@End
+
+@myLabelChannel
+  LabelKnob 13, {Chan }, InstMIDIChannel[DispInstrument - 1] + 1
+@End
+
+@myLabelBottomLimit
+  LabelKnob 14, {Bot }, (NoteName  MIDIBottomLimit[DispInstrument - 1], NO), (Div MIDIBottomLimit[DispInstrument - 1],12)-2
+@end
+
+@mySetDelayedMessage1
+// @OnTimer displays the Application Title Bar after the set delay time 
+// unless dispDelay is reset to 0 before that delay has elapsed.
+  dispIndex = 1
+  dispDelay = 100 // tweak this as you will
+@End
+
+@mySetDelayedMessage2
+// @OnTimer displays 'R/W Cancelled' after the set delay time 
+// unless dispDelay is reset to 0 before that delay has elapsed.
+// Note: also results in @myModereset being executed within @OnTimer
+  dispIndex = 2
+  dispDelay = 100
+@End
+
+@mySetDelayedMessage3
+// @OnTimer displays 'MS6 No Response' after the set delay time 
+// unless dispDelay is reset to 0 before that delay has elapsed.
+// Note: also results in @myModereset being executed within @OnTimer
+  dispIndex = 3
+  dispDelay = 100
+@End
+
+@mySetDelayedMessage4
+// @OnTimer displays 'MS6 Edit Buffer now initialised' after the set delay time 
+// unless dispDelay is reset to 0 before that delay has elapsed.
+// Note: also results in @myMIDISend being executed
+  dispIndex = 4
+  dispDelay = 50
+@End
+
+@myMIDILearnTopNote
+// set flags to be picked up in @OnMIDINote
+   topLimit = TRUE
+   LabelKnob 3,{Learn}
+   captureNextNoteForLearn = TRUE
+@End
+    
+@myMIDILearnBottomNote
+// set flags to be picked up in @OnMIDINote
+   bottomLimit = TRUE
+   LabelKnob 14,{Learn}
+   captureNextNoteForLearn = TRUE
+   @End
+   
+@myInterAppSysexSend
+// Communicate settings of patch currently the focus so can be picked up by a tone editor app
+// 0xF0 0x36 0x02 0x00 0x0C i #v bb pp ic 0xF7 
+// 0x0C - my magic number dump identifier  
+// i instrument, #v number of voices, bb bank, pp patch, ic channel of currently displayed performance instrument
+
+   iaSysexOutString[4] = DispInstrument // 1 to 6
+   iaSysexOutString[5] = Voices[DispInstrument - 1] // 1 - 6
+   iaSysexOutString[6] = BankNumber[DispInstrument - 1] // 1 - 7
+   iaSysexOutString[7] = ToneNumber[DispInstrument - 1] - 7 // 8 - 71 to 1 to 64
+   iaSysexOutString[8] = InstMIDIChannel[DispInstrument - 1] // 0 - 15
+
+    same = YES
+    for idx = 0 to 8
+      if iaSysexOutString[idx] <> lastIaSysexSend[idx] 
+         same = NO
+      endif 
+    endfor
+    if same = NO
+       SendSysex iaSysexOutString, 9 // buffer
+       // maintain a copy of last sent for comparison
+       CopyArray iaSysexOutString,lastIaSysexSend,9
+	 endif
+@End
+
+@myResetControllers
+   SendMIDIPitchbend lastMIDIChannel,8192 // recentre pitchbend  
+   SendMIDICC lastMIDIChannel,1,0 // zero modulation wheel
+   SendMIDIOut 0xD0 + MIDIChannel, 0 // zero channel aftertouch
+@End
+
+@MigrateSend // params: pIdx     output: pType, global98
+  // To destinguish the current state of the migration process, a 
+  // parameter pIdx is supplied to the event function - starting with
+  // the defined script id and incremented in each of the calls
+
+  // The @MigrateSend event function needs to set the pType variable to 
+  // the given pIdx input parameter - or to the constant MIGRATION_DONE
+  // to signal the end of transmission.
+
+  pType = pIdx                     // Transfer preset data one by one
+  if pIdx = mmScriptId 
+    CopyArray data,global98,66     // Transfer 66 entries of 'data'
+	
+  elseif pType = mmScriptId +1     // Transfer 6 entries of pan knob position
+     for p = 4 to 9
+        global98[(p - 4)] = GetKnobValue p
+	 endfor
+  
+  else
+    pType = MIGRATION_DONE         // The last call signals end of transmission
+  endif
+@End
+
+@MigrateRead // params: pType, global98
+  // The @MigrationRead event function is called after the sender updated
+  // the data supplying a pType parameter specifiying the content of
+  // global98 array. The MIGRATION_DONE is not forwarded to this event,
+  // but instead @MigrateImportDone is called
+
+  if pType = mmScriptId            // Receive is analogous
+    CopyArray global98,data,66     // First call copy into 66 'data' entries
+	
+  elseif pType = mmScriptId +1     // Second call restores pan knob positions
+	for p = 4 to 9
+        SetKnobValue p,global98[(p - 4)] 
+	 endfor
+	 
+  endif
+
+  // If you need to transfer more variables, just add them accordingly to both 
+  // MigrateRead and MigrateSend, using the same offset in both events.
+  // For version updates, only add new variables at the end of the IF-cascade and 
+  // take care of filling in default values for variables that an older script 
+  // version might not supply
+  @End
+  
+@MigrateImportDone // param pType (either MIGRATION_DONE or MIGRATION_ERROR)
+  if pType = MIGRATION_DONE
+    // Let the script redraw to show the changed state to the user
+    // Call @RedrawPads    
+    Call @myUnpackDump // update parameter arrays
+    Call @myDisplayData // Set the knob positions and label them
+    Call @myMIDISend // send to edit buffer so you can audition it	
+	LabelKnobs {MS6: <Import Done>}
+	Log SystemTime, {| MS6: <Import Done>}
+	Call @mySetDelayedMessage1 // performance editor home banner
+  else
+    // On failure (timeout, or other problems)  
+	LabelKnobs {MS6: <Import Timeout>}
+	Log SystemTime, {| MS6: <Import Timeout>}
+	Call @mySetDelayedMessage1 // performance editor home banner
+  endif
+  
+  // Don't forget to re-position the IMPORT knob
+  SetKnobValue 11,0
+@End
+
+@MigrateExportDone // param pType (either MIGRATION_DONE or MIGRATION_ERROR)
+  // Called several timer ticks after the OnLoad, if another instance
+  // was detected waiting for data and therefor several @MigrateSend
+  // took playe
+
+  // If your script is of type c) as defined at the end of the OnLoad,
+  // then this is the place to undo the temporary timer settings
+
+  
+  // This sample code is for type c) (own slower timer, not running 
+  //    after OnLoad), we need to restore the original settings
+  // SetTimerInterval 1000
+  // StopTimer
+@End
+
+
+
+
+// =========================================
+//    PAD & SHIFT Manager 
+// ============== V 3.0.1 ==================
+// Pad & Shift Manager Include V3.0.1
+// 
+// -ki
+//
+// V3.0.1  19.01.2020  Changed formatting
+// V3.0    09.01.2020  Added SHIFT button and better instructions
+// V2.0.   01.06.2019  Release on PatchStorage
+
+@PadAndShiftManagerInit
+
+  // Apply defaults, if the vars are not yet defined
+
+  if Unassigned pmAnalyseTime
+    pmAnalyseTime = 200 
+  endif
+  if Unassigned pmManageTimer
+    pmManageTimer = YES
+  endif
+  if Unassigned pmTickInterval
+    pmTickInterval = 50
+  endif
+  if Unassigned pmExcludePads
+    pmExcludePads = []
+  endif
+  if Unassigned pmExcludeCnt
+    pmExcludeCnt = 0
+  endif
+  
+  pmPadsActiveCnt = 0  
+  pmPadMaxId = 15
+  for pad = 0 to pmPadMaxId
+    Call @PMInitPadState
+  endfor
+  Call @PMInitShiftState
+  
+  if pmExcludeCnt>0
+    for pad = 0 to pmExcludeCnt-1
+      pmPadExclude[ pmExcludePads[pad] ] = YES
+    endfor
+  endif
+
+  pmAnalyseTicks = pmAnalyseTime / pmTickInterval
+
+  pmTimerRunning = NO
+  if pmManageTimer
+    SetTimerInterval pmTickInterval
+  endif
+  
+  Log {Pad & Shift Manager v3.0 started (},pmExcludeCnt,{ excluded pads, timer=}, pmTickInterval,{msec)}
+@End
+
+@PMInitPadState // Param: pad
+  pmPadActive[pad] = NO
+  pmPadTicks[pad] = 0
+  pmPadTaps[pad] = 0
+  pmPadHold[pad] = NO
+  pmPadExclude[pad] = NO
+@End
+
+@PMReleasePadState // Param: pad
+  Dec pmPadsActiveCnt
+  Call @PMCheckStopTimer
+  Call @PMInitPadState
+ @End
+
+@PMInitShiftState 
+  pmShiftActive = NO
+  pmShiftTicks  = 0
+  pmShiftTaps   = 0
+  pmShiftHold   = NO
+@End
+
+@PMReleaseShiftState
+  Call @PMInitShiftState 
+  Call @PMCheckStopTimer
+@End
+
+@PMCheckStopTimer
+  if pmManageTimer and pmTimerRunning and pmPadsActiveCnt=0 and not pmShiftActive
+    pmTimerRunning = NO
+    StopTimer 
+  endif
+@End
+
+@PMCheckStartTimer
+  if pmManageTimer and not pmTimerRunning
+    pmTimerRunning = YES
+    StartTimer 
+  endif
+@End
+
+@OnPadDown 
+  if pmPadExclude[LastPad]
+    pad = LastPad
+    Call @OnPadSingleTap
+  else
+    Call @PMCheckStartTimer    
+    if not pmPadActive[LastPad]
+      Inc pmPadsActiveCnt
+      pmPadActive[LastPad] = YES
+    endif
+    inc pmPadTaps[LastPad]
+  endif
+@End 
+
+@OnPadUp 
+  if pmPadActive[LastPad] 
+    if pmPadTaps[LastPad] = 1 and pmPadTicks[LastPad] < pmAnalyseTicks
+      pmPadHold[LastPad] = YES
+    endif
+  endif
+@End 
+
+@OnShiftDown
+  pmShiftActive = YES
+  inc pmShiftTaps
+  Call @PMCheckStartTimer
+@End
+
+@OnShiftUp
+  if pmShiftActive and pmShiftTaps = 1 and pmShiftTicks < pmAnalyseTicks
+      pmShiftHold = YES
+  endif
+@End
+
+//@OnTimer 
+  //if pmManageTimer
+    //Call @PadAndShiftManagerUpdate
+  //endif
+//@End 
+
+@PadAndShiftManagerUpdate
+  if not Unassigned pmPadMaxId  
+    for pad = 0 to pmPadMaxId
+      if pmPadActive[pad]
+        Inc pmPadTicks[pad]
+
+        if pmPadTicks[pad] > pmAnalyseTicks
+          if pmPadTaps[pad] = 1
+            if pmPadHold[pad]
+              Call @OnPadSingleTap
+            else
+              Call @OnPadHold
+            endif
+          else
+              Call @OnPadDoubleTap
+          endif
+
+          Call @PMReleasePadState
+        endif
+      endif
+    endfor
+  
+    if pmShiftActive 
+      Inc pmShiftTicks
+      if pmShiftTicks > pmAnalyseTicks
+        if pmShiftTaps = 1
+          if pmShiftHold
+            Call @OnShiftSingleTap
+          else
+            Call @OnShiftHold
+          endif
+        else
+            Call @OnShiftDoubleTap
+        endif
+    
+        Call @PMReleaseShiftState 
+      endif
+    endif
+  endif
+@End
+
+// ================ END ====================
+//    PAD & SHIFT Manager 
+// =========================================
+
+// ╔╦╗┬┌─┐┬─┐┌─┐┌┬┐┬┌─┐┌┐┌  ╔╦╗┌─┐┌┐┌┌─┐┌─┐┌─┐┬─┐
+// ║║║││ ┬├┬┘├─┤ │ ││ ││││  ║║║├─┤│││├─┤│ ┬├┤ ├┬┘
+// ╩ ╩┴└─┘┴└─┴ ┴ ┴ ┴└─┘┘└┘  ╩ ╩┴ ┴┘└┘┴ ┴└─┘└─┘┴└─
+// =================== V 1.2 ======================
+
+@MigrationManagerInit
+  MIGRATION_RUNNING = -1     // mmState and message type
+  MIGRATION_ERROR   = -2
+  MIGRATION_DONE    = -7
+   
+  MM_MAGIC  = 0              // Offsets in global97[ ]
+  MM_READER = 1
+  MM_SCRIPT = 2
+  MM_TYPE   = 3
+  MM_ACK    = 4
+  MM_SENDER = 5
+  
+  MM_MAGIC_ID = 0x15EEC0DE   // Magic number for MigrationManager
+
+  mmActive   = NO
+  mmRead     = NO
+  mmState    = MIGRATION_DONE
+  mmInstance = Random 1, 1000
+  if Unassigned mmScriptTimer
+    mmScriptTimer = NO
+  endif
+  mmIsMigrating = NO  
+@End
+
+@MigrationManagerOnLoad
+  if Unassigned mmScriptId
+    Log {📦 MigrationManager v1.2: ‼️ mmScriptId not initialized}
+  elseif Unassigned mmIsMigrating
+    Log {📦 MigrationManager v1.2: ‼️ @MigrationManagerInit not called before @MigrationManagerOnLoad}    
+  else
+    mmIsMigrating = NO 
+  
+    // Starting with about 7 hex digits, Mozaic can no longer correctly add small
+    // values due to its limited internal number range
+    // As the unique script id is later incremented for each message, better test
+    // beforehand, if the value is still in range for math operations
+    mmIdx = mmScriptId +1
+    if mmIdx - mmScriptId <> 1
+      Log {📦 MigrationManager v1.2: ‼️ mmScriptId value too high}
+    else        
+      mmIdx = mmScriptId      
+      
+      if global97[MM_MAGIC]<>MM_MAGIC_ID
+        Log {📦 MigrationManager v1.2: OnLoad - No receiver waiting}  
+      elseif global97[MM_SCRIPT]<>mmScriptId
+        Log {📦 MigrationManager v1.2: OnLoad - Wrong receiver waiting}
+      elseif global97[MM_SENDER]<>0 or global97[MM_TYPE]<>0
+        Log {📦 MigrationManager v1.2: OnLoad - Another migration ongoing}
+      else    
+        global97[MM_SENDER] = mmInstance
+        mmState   = MIGRATION_RUNNING
+        mmActive  = YES
+        mmRead    = NO 
+        mmTimeout = SystemTime + 500
+
+        mmIsMigrating = YES
+        if mmScriptTimer = NO
+          Log {📦 MigrationManager v1.2: Start Migration with own timer event}            
+          SetTimerInterval 50
+          StartTimer
+        else
+          Log {📦 MigrationManager v1.2: Start Migration using scripts timer event}    
+        endif        
+      endif
+    endif
+  endif
+@End
+
+@MigrationManagerOnImport
+  if Unassigned mmScriptId
+    Log {📦 MigrationManager v1.2: ‼️ mmScriptId not initialized}
+  elseif Unassigned mmIdx
+    Log {📦 MigrationManager v1.2: ‼️ @MigationManagerOnLoad was not called}
+  
+  elseif mmState<>MIGRATION_RUNNING
+    FillArray global97, 0
+    FillArray global98, 0
+    global97[MM_MAGIC]  = MM_MAGIC_ID
+    global97[MM_READER] = mmInstance
+    global97[MM_SCRIPT] = mmScriptId
+    // MM_SENDER, MM_TYPE and MM_ACK are zero fromm the FillArray above
+    
+    mmActive  = YES
+    mmRead    = YES
+    mmState   = MIGRATION_RUNNING
+    mmTimeout = SystemTime + 10000
+    if mmScriptTimer = NO
+      Log {📦 MigrationManager v1.2: Waiting for data with own timer event}    
+      SetTimerInterval 50
+      StartTimer
+    else
+      Log {📦 MigrationManager v1.2: Waiting for data using scripts timer event}    
+    endif  
+   mmIsMigrating = YES
+  endif
+  
+  if not mmActive
+    mmIsMigrating = NO
+    pType = MIGRATION_ERROR
+    Call @MigrateImportDone
+  endif
+@End
+
+//@OnTimer
+  //Call @MigrationManagerOnTimer
+//@End
+
+@MigrationManagerOnTimer
+  if Unassigned mmActive
+    mmActive = NO
+  endif
+  
+  if mmActive 
+    Call @MMTimerVerifyConnection  
+  
+    if mmState <> MIGRATION_ERROR
+      if mmRead
+        Call @MMTimerRead
+      else
+        Call @MMTimerSend
+      endif
+    endif
+
+    if SystemTime > mmTimeout
+      Log {📦 MigrationManager v1.2: ‼️ Timeout}    
+      mmState = MIGRATION_ERROR
+      if mmScriptTimer = NO
+        StopTimer
+      endif
+    endif
+  
+    if mmState <> MIGRATION_RUNNING
+      mmIsMigrating = NO          
+      if mmRead
+        pType = mmState
+        Call @MigrateImportDone
+      else
+        pType = mmState
+        Call @MigrateExportDone        
+      endif
+      
+      if mmScriptTimer = NO
+        StopTimer
+      endif
+      
+      if mmRead or mmState = MIGRATION_ERROR
+        FillArray global97,0
+        FillArray global98,0
+        mmActive = NO 
+      endif
+    endif
+  endif
+@End
+
+@MMTimerVerifyConnection
+  if global97[MM_MAGIC]<>MM_MAGIC_ID 
+    mmState = MIGRATION_ERROR
+    Log {📦 MigrationManager v1.2: ‼️ Communication broken - Magic of msg block changed}
+
+  elseif  global97[MM_SCRIPT]<>mmScriptId
+    mmState = MIGRATION_ERROR
+    Log {📦 MigrationManager v1.2: ‼️ Communication broken - ScriptId of msg block changed}
+
+  elseif (not mmRead) and global97[MM_SENDER]<>mmInstance
+    mmState = MIGRATION_ERROR
+    Log {📦 MigrationManager v1.2: ‼️ Communication broken - SenderId of msg block changed}
+
+  elseif mmRead and global97[MM_READER]<>mmInstance
+    mmState = MIGRATION_ERROR
+    Log {📦 MigrationManager v1.2: ‼️ Communication broken - ReaderId of msg block changed}
+  endif
+@End
+
+@MMTimerSend   // OnLoad
+  if global97[MM_TYPE]=global97[MM_ACK]
+  
+    pIdx  = mmIdx
+    pType = MIGRATION_ERROR
+    Call @MigrateSend
+    global97[MM_TYPE] = pType
+      
+    if pType = MIGRATION_ERROR
+      mmState = pType
+      Log {📦 MigrationManager v1.2: ‼️ MigrateSend didn't set pType for pIdx=},pIdx  
+        
+    elseif pType = MIGRATION_DONE    
+      mmState = pType
+      Log {📦 MigrationManager v1.2: Migration succesful}    
+      
+    else
+      Log {📦 MigrationManager v1.2: - Send },mmIdx - mmScriptId
+      mmIdx = mmIdx + 1   // Inc clips at 65536 per default    
+      mmTimeout   = SystemTime + 250        
+    endif
+  endif      
+@End
+
+@MMTimerRead    // OnImport
+  pType = global97[MM_TYPE]
+  if pType=MIGRATION_DONE
+    mmState = pType
+    Log {📦 MigrationManager v1.2: Migration succesful}    
+    
+  elseif pType=MIGRATION_ERROR
+    mmState = pType
+    Log {📦 MigrationManager v1.2: ‼️ Communication broken}    
+
+  elseif pType<>0 and pType<>global97[MM_ACK]
+    Call @MigrateRead
+    global97[MM_ACK] = pType
+    Log {📦 MigrationManager v1.2: - Read },pType - mmScriptId
+    mmTimeout = SystemTime + 250              
+  endif  
+@End
+
+// =================== END ============================
+// ╔╦╗┬┌─┐┬─┐┌─┐┌┬┐┬┌─┐┌┐┌  ╔╦╗┌─┐┌┐┌┌─┐┌─┐┌─┐┬─┐
+// ║║║││ ┬├┬┘├─┤ │ ││ ││││  ║║║├─┤│││├─┤│ ┬├┤ ├┬┘
+// ╩ ╩┴└─┘┴└─┴ ┴ ┴ ┴└─┘┘└┘  ╩ ╩┴ ┴┘└┘┴ ┴└─┘└─┘┴└─

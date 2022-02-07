@@ -1,0 +1,155 @@
+=======================
+DOCS
+
+FEATURES:
+* Pads to mute and unmute Loopy's tracks
+* Listen to MIDI for muting/unmuting Loopy's tracks with discrete commands and retriggering.
+* Ability to set pan and volume for each track
+* Loopsets. Save up to four loopsets that recall the mute state/pan/volume for each loop. Switch between loopsets at the touch of a pad.
+* Remote track selection, re-recording
+* Remote toggle 'play from start'
+* Discrete per-track mute/unmute commands via MIDI
+
+
+Use the Page knob to switch pages.
+
+HELPER SCRIPTS
+To make setting up the MIDI Bindings easier, I have supplied two Mozaic scripts that make sending arbitrary MIDI CC and MIDI Note values: EAS Pad Notes and EAS Pad CC.
+
+PAGES
+
+PAGE 1: MUTES/LOOPSETS PAGE (MAIN PAGE)
+The first page is the mutes/loopsets page. Tap pads to mute and unmute tracks. When a track is active it is lit-up. Tap 'Store Loopset' to store the current track settings as a loop set.
+
+Shift: hold down the shift key while on the main page to access the Helpful Functions pads (also available on Page 2) such as Toggle Play, Restart Session and more
+
+
+
+
+PAGE 2: HELPFUL FUNCTIONS
+The pads here are self-explanatory with a couple of exceptions.
+
+Settings Pad: Hold down the settings pad and use the knobs (which are labeled when active) to change the settings for (Note) Mode and Retrigger. When Note Mode is 0, Loopy Pal unmutes tracks while the corresponding note is on. When Note Mode is 0, Loopy Pal uses the notes from 48 (C3 in AUM) through 59 (B3) to unmute tracks and uses the notes one octave higher to mute the corresponding track. RETRIGGER: by default if you send an Unmute command by MIDI to Loopy Pal to a track that is unmuted, nothing happens. When retrigger mode is 1, if you send an unmute command to a track that is unmuted, it will retrigger that track. This only has an impact of Loopy is set to Play loops from the start when unmuted. With this setting it is posible to unco-ordinate loops even when loops are set to synchronize.
+
+
+
+
+PAGE 3: SELECTED TRACK FUNCTIONS
+This page allows you to set the pan and volume of each track and the color of its pad. It also lets you re-record a pad's audio either via overdub or by recording over (replacing) the track.
+
+Tapping a track selects it. Use Volume, Pan, Color knobs to change the settings for the selected track. Loopsets recall the pan and volume of all tracks at the time the loopset is saved. This allows you to have different settings for different loopset.
+
+Toggle Record - this button primes a track for recording (recording will start at the top of the next loop cycle). If the track already has content, the recording happens in overdub mode. Use the Re-Record button to replace rather than overdub. Pressing this button will recording is happening will stop the recording (at the end of the current loop cycle)
+
+Re-Record Selected - this button primes Loopy to record over the selected track and replace its contents. You need to press Toggle Record to end the recording.
+
+
+
+
+================= CONTROLLING BY MIDI
+If you use MIDI, you can use notes or MIDI CC.
+
+If using MIDI CC, controllers 22-33 are used to control Loopy's 12 pads (unless you change the settings). A value from 0-63 mutes a loop; value greater than 63 unmutes it.
+
+Notes mode 0 (default): If using MIDI notes, the default mode uses notes 48-59 (in AUM these are the 12 notes staring at C3). When the note is on, the loop is unmuted, when the note is off it is muted. Loopy acts as a sort of sampler in this mode.
+
+Notes mode 1. When this mode is active, you unmute loops with MIDI note 48-59 (C3-B3 in AUM). To mute the notes send midi notes 60-71 (C4-B4 in AUM)
+
+RETRIGGER MODE: Normally, if you unmute a track that is already playing, the script doesn't do anything. If you turn retrigger mode to 1, if you use MIDI to unmute a track that is already playing, the loop will be retriggered (by muting then unmuting it). Loopy can't handle very fast toggling, so this method will result in a 65 millisecond delay in the retrigger.
+
+================= SETUP
+You need to set things up so that Loopy is receiving MIDI from this script. You should probably not send MIDI to loopy from other sources or things might get confused. Optionally, you can have this script listen to MIDI in order to control muting/unmuting from another app.
+
+You will need to set Loopy up with MIDI bindings for the commands used by this script as described below.
+
+ 
+================= LOOPY SETUP
+ 
+ TOGGLE MUTE bindings. Set up 12 toggle mute bindings. By default use MIDI Notes 48-59. Midi Note 48 is C3 in AUM. To use a different series of notes, change the loopyNoteBase variable to the first note you want to use. Set up,the Loopy bindings accordingly.
+ MUTEALL binding. Set up a binding for mute all. By default, MIDI Note 47 is used. To use another note, change the muteallnote variable.
+ TOGGLEPLAY binding. Create a binding for toggle play. The default is note 36. Change the toggleplaynote value if you woild like to use another midi note.
+ 
+ PRO TIP - AUM: You can MIDI learn this scripts pads in AUM if you want to trigger the pad's from the controller of your choice.
+ 
+ HOW IT WORKS. THE PADS:
+ - When the script loads, it will mute all of loopy's tracks so that we know their state.
+ - A track is muted when the button is dim.
+ - A track is unmuted when it is lit.
+ - Tap the pads to mute/unmute your loops as neede.
+ 
+ 
+ NOTES: if you try to mute/unmute an empty loop, it will record that loop. the script assumes that all loops are filled.
+
+
+
+=================SET UP THE FOLLOWING MIDI BINDINGS IN LOOPY
+- optional bindings are bindings for advanced features. If you plan to use the features, set up the bindings otherwise you may skip them. Create the binding to NOTE ON unless otherwise specified. The note numbers are those used in the original script. You may change the note numbers used in the script -- if you do so, make sure to set them up in Loopy accordingly.
+
+The numbers after the command are the MIDI Note Numbers. Note that apps use a few different octave numbering schemes. AUM and Loopy call MIDI note 48 C3. Audiobus refers to it as C2.
+
+LOOPY BINDINGS
+
+CORE (REQUIRED) BINDINGS
+
+MUTE ALL - NOTE 47 
+
+TOGGLE SESSION PAUSE - NOTE 36
+
+TOGGLE MUTE for each loop. MIDI Note 48 is C3 in AUM (and Loopy)
+- track 1: 48 
+- track 2: 49
+- track 3: 50
+- track 4: 51
+- track 5: 52
+- track 6: 53
+- track 7: 54
+- track 8: 55
+- track 9: 56
+- track 10:57
+- track 11:58
+- track 12:59
+
+OPTIONAL BINDINGS:
+
+(global commands)
+RESTART SESSION: MIDI NOTE 127
+TOGGLE "PLAY FROM START": CC05
+
+BINDINGS TARGETED AT SELECTED TRACK
+ADJUST TRACK PAN (selected track): CC 10
+ADJUST TRACK VOLUME (selected track): CC 07
+TOGGLE RECORD (selected track): CC03 
+RERECORD TRACK (selected track): CC04
+SOLO TRACK (selected track):CC02
+
+
+(for each track)
+SELECT TRACK (numbers are MIDI Note Numbers)
+- track 1: 0
+- track 2: 1
+- track 3: 2
+- track 4: 3
+- track 5: 4
+- track 6: 5
+- track 7: 6
+- track 8: 7
+- track 9: 8
+- track 10:9
+- track 11:10
+- track 12:11
+
+
+WHAT LOOPY COMPANION LISTENS FOR (by default)
+
+NOTES mode 0 (default): 48-59 - note on unmutes a track, note off mutes it
+NOTES mode 1: 48-59 (unmutes a track), 60-71 (mutes a track)
+
+MIDICC: 22-33 (for tracks 1 through 12). A value less than 64 mutes a track, a value of 64 or greater unmutes it.
+
+
+
+
+
+
+
+ 

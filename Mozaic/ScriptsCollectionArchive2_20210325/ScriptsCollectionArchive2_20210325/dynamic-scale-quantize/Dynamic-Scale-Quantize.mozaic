@@ -1,0 +1,158 @@
+@OnLoad
+  initLayout = 4
+
+  // Knob Assignments
+  filterKnob = 0
+  learnKnob = 1
+  clearKnob = 2
+  
+  // Initialize on new load
+  if (Unassigned init)
+    init = YES
+    filter = NO //PassThru
+    learn = 0   //Play 
+    //Disable all notes
+    for i = 0 to 11
+      allowNote[i] = NO
+    endfor
+    mode = 0
+    for idx = 0 to 21
+      LabelKnob idx,{ }
+      SetKnobValue idx,0
+    endfor
+    layout = initLayout
+  endif
+
+  // Filter knob
+  if filter = NO
+    SetKnobValue filterKnob, 0
+    LabelKnob filterKnob, {PassThru}
+  else
+    SetKnobValue filterKnob, 127
+    LabelKnob filterKnob, {Filtering}
+  endif
+  
+  // Learn knob
+  if mode = 0
+    SetKnobValue learnKnob, 64
+    LabelKnob learnKnob, {Play}
+  elseif mode = -1
+    SetKnobValue learnKnob, 0
+    LabelKnob learnKnob, {Remove}
+  elseif mode = 1
+    SetKnobValue learnKnob, 127
+    LabelKnob learnKnob, {Add}
+  endif
+  
+  //Clear All knob
+  if (GetKnobValue clearKnob) = 127
+    LabelKnob clearKnob, {No Notes}
+  else
+    LabelKnob clearKnob, {Clear >>} 
+  endif
+
+  ShowLayout layout
+  
+@End
+
+@OnMidiInput
+  //pass through all but notes 
+  if (MIDICommand <> 0x08) and (MIDICommand <> 0x90)
+    SendMIDIThru 
+  endif
+@End
+
+@OnMidiNote
+  octave = Div MIDINote, 12
+  index = MidiNote - (octave * 12)
+  noteAdd = 0
+  if filter = NO
+    SendMIDIThru
+  elseif (filter = YES) and (mode = 0)
+    while (NOT allowNote[index]) and (noteAdd < 12) 
+      Inc noteAdd
+      if index = 11
+        index = 0
+      else
+        Inc index
+      endif
+    endwhile
+    if (noteAdd < 12)
+      SendMIDIOut MIDIByte1, MIDIByte2 + noteAdd, MIDIByte3
+    endif
+  endif
+@End
+
+@OnMidiNoteOn
+  octave = Div MIDINote, 12
+  index = MidiNote - (octave * 12)
+  if mode <> 0
+    if mode = -1
+      allowNote[index] = NO
+    elseif mode = 1
+      allowNote[index] = YES
+      SetKnobValue clearKnob, 64
+      LabelKnob clearKnob, {Clear >>} 
+    endif
+    //Log {Note }, index, {: }, allowNote[index]
+   endif
+@End
+
+@OnKnobChange 
+  value = GetKnobValue LastKnob
+  if LastKnob = filterKnob
+    if value <= 64
+      filter = NO
+      LabelKnob filterKnob, {PassThru}
+    else
+      filter = YES
+      LabelKnob filterKnob, {Filter}
+    endif
+  elseif LastKnob = learnKnob
+    if value = 0
+      mode = -1
+      LabelKnob learnKnob, {Remove}
+    elseif value = 127
+      mode = 1
+      LabelKnob learnKnob, {Add}
+    else
+      mode = 0
+      LabelKnob learnKnob, {Play}
+    endif
+  elseif LastKnob = clearKnob
+    if value = 127
+      // Clear all notes.
+      for i = 0 to 11
+        allowNote[i] = NO
+      endfor
+      LabelKnob clearKnob, {No Notes}
+
+      //Set Add mode.
+      mode = 1
+      SetKnobValue learnKnob, 127
+      LabelKnob learnKnob, {Add}
+    else
+      LabelKnob clearKnob, {Clear >>} 
+    endif
+  endif
+@End 
+
+@OnShiftDown 
+  if layout = 4
+    layout = 0
+  else
+    Inc layout
+  endif
+  ShowLayout layout 
+@End
+
+@Description
+Dynamic Scale Quantize
+Builds a custom scale based on notes received. 
+
+Initially all notes are passed through and there are no notes enabled in the filter. 
+- FIRST KNOB: Turns filtering on or off
+- SECOND KNOB: Right = add notes, Left = remove notes
+- THIRD KNOB: Right = remove all notes and go to add mode
+- SHIFT: Cycle through views
+Knobs can also be changed via their AU parameters

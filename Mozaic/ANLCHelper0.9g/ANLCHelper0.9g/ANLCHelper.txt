@@ -1,0 +1,193 @@
+Arturia & Novation LED Controller Helper (ANLCHelper)
+
+This Mozaic script allows you to set up the LED pads on your MIDI controller keyboard to do useful tricks:
+- select the color to show when a pad is active / inactive
+- work pads as toggles or as momentary switches
+- group pads as independent switches or permitting only one pad per group to be turned on
+- set up pads to emit notes or CC events on configurable MIDI channels
+- assign the CC numbers sent by the knobs on your MIDI keyboard
+- switch between different sets of these configurations altogether
+
+This is a genericised modification of LaunchKeyHelper by Espiegel123:
+     https://patchstorage.com/launchkey-helper/
+and it is still work in progress as it does not change any the original functionality, rather
+it only adapts it to additional entry-level keyboards.
+
+
+The script can be immediately configured to work in AUM with the following entry-level MIDI controller keyboards:
+
+* Novation LaunchKey Mini Mk2
+* Novation LaunchKey Mini Mk3
+* Arturia MiniLab Mk2
+
+
+1. Setting up your Keyboard and Mozaic in AUM
+
+(1) Start Mozaic in AUM and load the script ANLCHelper
+
+First time set up for your MIDI keyboard:
+       Click on CODE (below the UI)
+       Edit in the version of the Midi keyboard you use:
+        
+       tap on UPLOAD button and  SHOW GUI
+       SAVE the script with your change for future use
+
+
+(2) Configure the connection to your keyboard in AUM:
+
+Setup for LaunchKey Mini Mk2: 
+    * MIDI Setup in AUM:
+    Mini DAW Port -> Mozaic  -*-> (ch1)Mini DAW Port
+                              |
+                              *-> (not ch1) your apps / Midi-Ctrl
+    You can use e.g. StreamByter to filter channels
+
+Setup for LaunchKey Mini Mk3:  
+    * you must start in default mode (MIDI, drum pads) - e.g. you can unplug and replug USB
+    * MIDI Setup in AUM:
+    Mini DAW Port -> Mozaic  -*-> (ch10) Mini DAW Port
+                              |
+                              *-> (not ch10) your apps / Midi-Ctrl
+    You can use e.g. StreamByter to filter channels.
+     Does _not_ use the DAW mode!
+
+
+   Setup for Arturia MiniLab Mk3 keyboard:  
+     * you first _must_ select one of the (original) presets 2-7:  Shift + pad 2 to 7
+        The default preset 1 will _not_ work, nor will any preset that you have already customized.
+     * MIDI Setup in AUM:
+     Arturia Port -> Mozaic  -*-> Arturia Port (sysex messages)
+                             |
+                             *-> your apps / Midi-Ctrl
+ 
+
+
+2. Configuring PAD Behavior
+
+The script supports multiple Configuration Sets. 
+Note that each Mozaic screen title shows the number of the Configuration Set:
+
+    ...  -- Config #1
+
+Be aware of the Configuration Set in use.  You find a description below on how to change between them.
+
+Each Configuration Set has four different screens. Each screen will be described in turn.
+Hit the small black on-screen  [SHIFT] button when you want to get to the next screen.
+
+
+Screen 1:  MAIN: Controller Pads
+
+This is the first screen that opens up.
+This screen MUST be used to operate the configured pads and controller knobs per the Configuration Set selected.
+
+You see two knobs on this screen. Typically, you can ignore these for now. 
+[[ You use them to work with multiple configuration sets:
+     'NavOff' - turn this right to 'NavOn' to be able to navigate to other Configuration Sets with:
+                       on Mini Mk2: use the round buttons, 
+                       on Mini Mk3: use the '<' and 'Stop Solo Mute' buttons
+                       on Arturia: use the 'click' on the rotary knobs 1 and 8.
+      'Pages:' - set the maximum number of configuration sets (up to four). ]]
+
+The next three screens are used to customize this Configuration Set.
+
+[[ To immediately jump back to this 'MAIN: Controller Pads' screen from any customization screen:
+       * on Mini Mk2: hit the '^' (scene up) button
+       * on Mini Mk3: hit the  Shift+'>'  key combo
+       * on Arturia: not supported. ]]
+
+
+Screen:  GROUP Settings -- Hold Pad to Edit
+
+Here you configure up to 8 'Groups Of Pads' on-screen. 
+The Groups describe common pad behavior with respect to colors, behavior as a group, midi channel, etc.
+
+Push and hold the upper pad for one of the Groups and use the on-screen knobs to adjust:
+* the foreground color
+* the mode:
+   - independent mode: each pad in the Group operates independently
+   - group mode: when a pad is selected in the Group, all others are turned off
+   - keys mode: pads in this Group are set to momentary behavior ( offMessage=-1 and SendUp: 1 ) 
+       ??? better explanation ???
+* retrigger applies to 'group mode' only,  i.e. where only one pad is on. Example: clip launcher
+     - set to 1:  pad will re-trigger (for example, on an an already playing clip)
+     - set to 0: when it does not make sense to re-trigger the already selected pad
+
+Push and hold the lower pad for one of the Groups and use the on-screen knobs to adjust:
+* the background color
+* the midi channel:  midi channel to send pad events, when -1 will use the global padChan
+* the start note:  whether to forward a pad's incoming note (when -1) or else the note to send
+
+You can also use your MIDI keyboard to adjust the color for a 'Group Of Pads' as follows:
+* hold down the pad corresponding to the Group
+   ** the upper row of pads is used for the foreground color
+   ** the lower row of pads is used for the background color. On Arturia you need to switch to Pads bank 8-16.
+* while holding down the pad turn the knob corresponding to the 'Group of Pads' to change the color. 
+   On Arturia: use the upper row of knobs.
+
+
+Screen:  PAD Settings
+
+Here you configure the behavior of the 16 LED pads on your MIDI controller. 
+(Note that Arturia uses a  special key to switch between keyboard pads 0-7 and 8-16.)
+
+Push and hold one of the pads and use the knobs on-screen to adjust:
+* the Group Of Pads that governs this pad's behavior
+* sendType: whether this pad sends a note (which is then taken from the 'start note' defined in the Group) or else the CC# to send
+* sendUp: when pad has a CC or note associated, 'on' means sending this on 'pad up'
+* offMess: when >=0, this is the CC value to send on 'pad up'
+
+Push and hold one of the pads and use the [SHIFT] key on-screen to toggle:
+* type:  toggle   or  momentary  - whether the pad turns off when you release it, or toggles between on and off
+
+??? use of keyboard pads to adjust ???
+???  - use of the Midi keyboard knob to adjust ???
+
+
+Screen:  DIALS AND MISC
+
+This configures the behavior of MIDI keyboard's controller knobs and other settings.
+
+The following are global settings for this Configuration Set:
+* on-screen knob dialChan: the channel on which the MIDI keyboard's CC knobs will be forwarded
+* on-screen knob padChan: the channel on which the MIDI keyboard's pad notes will be forwarded
+
+Hold down one of the on-screen upper pads and use the on-screen knobs to configure:
+* the CC controller number to use for forwarding CC messages from the corresponding knob on the MIDI keyboard
+* for Arturia, shown as CC2: the CC controller number for the _lower_ row of knobs (8-16) that the owners of this keyboard can use
+
+??? use of keyboard pads to adjust ???
+???  - use of the Midi keyboard knob to adjust ???
+
+The pads 'Share to global' and 'Load to global' write and -respectively- read all Configuration Sets to (or from) a shared memory memory space. It could be used to share configuration changes across different instances of the script. (Note: currently the Arturia controller 8-16 message channels will not be saved/restored using this.)
+
+Hit [SHIFT] to return again to the MAIN screen.
+
+
+3. Examples
+
+[[To be worked out in the future.]]
+
+Sample Script: per video
+
+(( Idea: toggle keyboard betwee different channels (???) ))
+
+Idea: Mixer
+   cs1:   volume   -   bypass/not bypass  -  solo exclusive group  => ch 1-8
+   cs2:   balance -   open preset - ??
+   cs3:     ??different cc settings??    - ...
+
+Idea: Component CCs
+     cs1:   cc21-28     (45-52)    - pads??
+     cs2:  cc29-36     (53-60)    - ??
+     cs3:  cc37-44     (61-68)    - ??
+
+
+4. Creating Configuration Sets directly in Mozaic Code
+
+[[To be described in future.]]
+
+
+5. Color Usage in the Supported MIDI Keyboards
+
+
+

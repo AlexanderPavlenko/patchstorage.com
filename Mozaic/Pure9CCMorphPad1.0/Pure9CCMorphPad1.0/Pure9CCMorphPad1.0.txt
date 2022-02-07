@@ -1,0 +1,166 @@
+Pure 9CC Morph Pad 1.0
+
+Are you fascinated with the morph pad in the Pure Piano app?
+Would you like to create a customized morphing pad, sending your own instruments to be morphed 
+by your own effect chains?
+
+The Pure 9CC Morph Pad Mozaic script allows you to do all that - and more!!
+
+The basic idea is to map an X/Y pad to 9 Midi controllers. 
+Each controller is accessed at a 'hotspot' of the X/Y pad:
+* in the center (Ctr),
+* in the middle of each of the four sides (E, N, W, S),
+* and in the four corners (NE, NW, SW, SE)
+
+
+Morphing 9 CCs From the X/Y Pad
+
+When you first load the Mozaic script you see that the 'Pure 9CC Morph Pad' key is highlighted in green.
+This means that the 'Input X/Y Pad' is active and sending out values to the 9 controllers.
+Move the target cross on the X/Y pad.
+You see the knobs under 'Output Values' change their value between 0 and 127, depending on where you move. 
+The knob labels show both, the CC number and the value sent.
+
+The first 8 knobs correspond to the locations on the outer rim of the X/Y pad, 
+starting at E and moving counterclockwise, returning back via SE.
+The 9th knob corresponds to the center (Ctr) location of the X/Y pad. 
+The 10th knob is used for fun with randomization.
+
+  E  NE  N  NW   W
+  SW  S  SE Ctr Rand
+  
+When you are in morphing mode, turning the knobs will not effect any change or send any message 
+- this can only be done through manipulating the X/Y pad.
+However, there is one exception: the Randomize (Rand) knob - turn this knob past 12'o clock to randomize
+the assignments between knobs (i.e. 'hotspots') and the channels & CC numbers they send out.
+
+
+Setting Up the Morph Pad
+
+Use the three additional pad keys and the SHIFT button to enter different setup modes for the Morph Pad.
+When you are in the setup modes, you typically see the knobs labelled with E, NE, ..., SE, Ctr, and Glo.
+This tells you which of the 'hotspots' on the X/Y Pad corresponds to each knob.
+The knob labeled 'Glo' - for Global - allows you to make a global change to all of controllers.
+
+Once you are done with setup, tap on 'Pure 9CC Morph Pad' to return to active morphing via the X/Y pad.
+
+Of note: when you re-load the same Mozaic script instance, the X/Y Pad will be centered 
+and the corresponding values - which are 127 for the 'Ctr', and 0 for 'E' through 'SE' -
+will be sent to the controllers.
+However, changes made in the setup screens or via the 'Rand' button will be preserved.
+
+Next we will look at the different setup features.
+
+
+Set Bias
+
+The 'Set Bias' key enters the bias setup for the controller values.
+
+Morphing via the X/Y pad is divying up 127 'points' between 'hotspots', awarding
+them to 1, 2, or 3 of the 9 available controllers.
+In a linear bias - which corresponds to a setting of 1 - these awarded 'points' from the
+controllers will add up exactly to 127.
+Reducing the bias of a controller by moving it towards 0 will 'bulge up' its
+response curve, so that the actual contoller value is increased upward from the points awarded.
+In the extreme, when the bias is set to 0, the controller value will almost immediately jump to
+127 when an input signal is received.
+
+The 'Set Bias' mode allows you to move individual controller knobs to set their bias to taste.
+Or, you can use the 'Glo' knob to change the bias for all controllers at the same time.
+The script uses an initial bias setting of 0.7 which pushes up controller settings somewhat
+from the linear case.
+
+
+
+Set Channels
+  
+The 'Set Channels' key allows setting up different channels for each of the 9 controllers.
+
+The script initially sends all controller values to channel 1.
+You may want to access individual controllers on different channels.
+Perhaps you are even using the same controller number on 9 different channels. 
+Adjust the knobs here to select the desired channels.
+
+The global knob 'Glo' allows you to set the same channel for all controllers.
+Except, if you have set all controller numbers to be the same (see 'Set Out CCs'),
+then the 'Glo' knob will always assign successive channel numbers to your controllers!
+
+
+Set Out CCs
+  
+The 'Set Out CCs' key allows setting up the controller numbers for the 9 controllers.
+
+The script initially sets the controllers for E,NE,...,SE to cc20,...,cc27 respectively,
+and the 'Center' controller is set to cc7. 
+Use this screen to assign individual controller numbers as desired.
+
+The global knob 'Glo' allows you to set successive controller numbers for all 9 controllers.
+Except, if you have set the 9 channels for your controllers to be all different (see 'Set Channels'),
+then the 'Glo' knob will always assign the same controller cc number to all of your controllers!
+
+
+Set CCs for X/Y Input (and more)
+  
+Tap on the [SHIFT] button to get to the 'Set CCs for X/Y Input' setup.
+
+This allows you to control the X/Y pad from incoming controller signals.
+   * ccX knob - select the cc number for receiving the X value
+   * chanX knob - select the channel for receiving the X value
+   * ccY knob - select the cc number for receiving the Y value
+   * chanY knob - select the channel for receiving the Y value
+This functionality is inactive when the knob is turned all the way to the left.
+Note that both, an X value and a Y value must have been received for the Input X/Y Pad 
+to start responding to external controller signals.
+
+Of note: the parameters 'XYPad X' and 'XYPad Y' are also exposed on Mozaic in AUM.
+Thus, an alternative way of setting up external control would be by
+using AUM 'Midi Control' directly to manipulate these parameter values.
+In this case you will want to bypass this setup altogether.
+
+By default, any Midi message received by the script that does not match the ccX or ccY seetings above
+is passed through. This behavior allows you to splice this script into your Midi effects message flow.
+This is controlled by an additional option:
+* Thru  - optionally turn off pass-through of other messages. Only pass signals generated from script.
+
+Finally, this screen lets you set up the behavior of the 'Rand' button on 'Pure 9CC Morph Pad'.
+* RndCtr  - select whether the center (Ctr) hotspot should be randomized or not
+* Rand - select amount of randomization (off, or 1..16). Turn all the way left to disable randomization.
+When the script is first initialized, the 'Ctr' hotspot will not be included in randomization
+and randomization is set to 8 rounds of flips.
+
+
+Ready to Play?!
+
+The ZIP file contains this readme, the Mozaic script
+
+   Pure9CCMorphPad1.0.mozaic
+
+and three AUM projects.
+The projects demo the basic Morph Pad functionality: a single instrument
+(controlled by the 'Ctr' hotspot) is sent to 8 additional effect chains 
+(controlled by the 8 hotspots from E to SE):
+
+  ipadPure9CCMorphPad  (rozeta, atom 2, ravenscroft 275, yaled, eos, discord4, filterstation 2,
+                        tb equalizer, saturn 2, thafknar, wood'n gate, tb barricade)
+     - a quick-and-dirty attempt to provide similar characteristics to the Pure Piano morph pad
+       (If you have all the referenced Apps you know that you are an App hoarder!)
+     
+  iphonePure9CCMorphPad (atom, SoundFonts, aufx:dub, aufx:space)
+     - a similar project as the abobe with more modest requirements
+     
+  tonestackPure9CCMorphPad  (kern midi lfo, atom 2, ToneStack PRO)
+     - for the fun of it, a version with ToneStack-only effects, now that it is available as AUv3!
+ 
+Now, can you come up with apps and settings that do provide an emulation of the morph pad in Pure Piano?
+Can you produce better / bigger / wilder/ more fun / more useful morph pads than the one in P.P.?
+     
+But - this is just ONE way to use the script - there are a myriad other avenues to explore!
+* use the controllers to select between different instruments (e.g. via volume control)
+* use the controllers for messing with different settings on the same instrument
+  ** remember the flexibility of AUM 'Midi Control': even though the controllers values
+     sent by the script 'rest' at 0 and the go up to 127, you can assign a particular starting point 
+     and the subsequent value increase or decrease in the AUM mapping.
+* use multiple instances of the script and control each of them from a pair of physical knobs
+  on an external keyboard.
+
+  Have fun!

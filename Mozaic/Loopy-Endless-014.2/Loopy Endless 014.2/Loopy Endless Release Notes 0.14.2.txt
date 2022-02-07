@@ -1,0 +1,97 @@
+LOOPY ENDLESS v0.14.2
+
+This is a Mozaic script that lets you use Loopy as something like an endless/retrospective/lookahead looper or take recorder.
+
+This is a work-in-progress and I find that it works well. I am finding it very useful.
+
+
+CAVEATS: Loopy wasn't designed to operate this way and wasn't built with sample accurate MIDI response in mind. However, I find that it works well with the understanding that I will occassionally need to use a sample editor (usually Auditor) to repair clicks that might occur when merging loops.
+
+FREE LOOPING: even though Endless specifies duration in terms of the number of bars (at the host's current tempo), you can use it for tempoless looping, but you will have to use an audio editor (such as Auditor) to grab the audio you want. I generally import the Loopy tracks into Auditor (it takes a few seconds using the Share sheet). Occasionally, there is the need for a slight edit at the boundaries between the tracks.
+
+OPERATION (once you have set up the MIDI Bindings)
+- Route your audio to Loopy
+- Select the number of bars you want the tracks (loops) to be.
+- Tap the "Tap to Arm" button
+- Start the host transport (you need to do this even if free looping as it makes the MOZAIC script tidier)
+- When you are done recordin tap 'Stop'
+
+SETTINGS:
+First - this is the number of the first track on which Endless will record
+#Loops - this is the number of tracks/loops that Endless will cycle between.
+Bars - the number of bars
+Tweak - you can probably ignore this. This lets you dial in an initial delay (in milliseconds) between when the host starts up and when Endless tells Loopy to start recording the first track. There are times where a 2 or 3 ms delay is useful
+
+BUTTONS:
+Tap To Arm/Stop - tap to ready Endless for recording -- which starts when the host transport starts. IMPORTANT NOTE! When you arm endless it will clear the tracks it needs to operate. It will only clear the tracks in range to be used. This is necessary to prevent Loopy from overdub rather than erase recording.
+
+Let Last Loop Finish - turn this on so that Loopy will stop recording at the end of the current loop. Otherwise, the recording will terminate immediately on pressing stop.
+
+Send Transport Events - Turn this on to have Endless send the armedCC MIDI CC (100 on channel 10) when you press "Tap to Arm" and the  stopCC (101 on channel 10).
+
+Reset Session - Tap this button then shift-tap it again (there is a prompt) to reset the Loopy session -- erasing all the tracks.
+
+
+A COUPLE OF THINGS TO KNOW
+Endless works by cycling through the tracks starting on the first track. If First is set to 10 and # of Loops is 3, recording starts on track 10 then proceeds to track 11 then track 12 then starts again at track 10. You can use as few as two loops to just cycle between the two. I prefer 3. A split second (250 ms) before a track is re-used, its old contents are erased.
+
+
+
+SETUP
+Route the output from Loopy Endless to Loopy's virtual midi port.
+
+LOOPY BINDINGS AND SETTINGS
+In order for Mozaic to control Loopy, you have to set up "bindings": Loopy-speak for a Loopy action with a MIDI event (note or MIDI CC) assigned to it. A list of the bindings you need to set up is found below.
+
+The settings in Track Management inside Loopy have a big impact on how well this works.
+
+On my iPad (iPad 6 with iOS 13.7), I run this with these settings in Loopy's:
+- Synchronize Tracks: ON
+- Count-in recording: OFF
+- Count-out recording: INSTANT OFF
+
+
+Alternatively, I sometimes run it with Synchronize Tracks: OFF. 
+
+ABLETON LINK ALERT!!! Leave Ableton Link Off in Loopy when using Endless unless you turn on "Let Last Loop Finish". When link is on and you stop endless before a loop reaches its natural end point, it can result in the loop being "rotated.""
+
+
+LOOPY BINDINGS
+Below are the bindings setup in Loopy Endless.  You can use different MIDI assignments -- but that will require you to edit the Mozaic script which is straightforward because I have put all the MIDI binding variables together. Look for "LOOPY BINDINGS AND RELATED" in the @onLoad routine if you want to customize the assignments.
+
+
+MIDI CHANNELS
+The script sends events on two different channels. Most commands are send on the "loopyChan" channel (MIDI Channel 1). A few commands are sent on "loopySpecialChan" (MIDI Channel 16)
+
+CORE (REQUIRED) BINDINGS
+The words in ALL CAPS are the commands as they appear in Loopy's setup panels.
+
+== FOR LOOPY CHAN
+
+SELECT TRACK BINDINGS
+The following bindings are for selecting a Loopy track. They are MIDI notes and must be remain consecutive if you choose to use a different binding than the one set up in the script
+
+The variable "selectTrackBase" gets assigned the MIDI Note number of the binding to Track 1.
+
+SELECT TRACK (TRACK 1) MIDI NOTE NUMBER 0
+SELECT TRACK (TRACK 2) MIDI NOTE NUMBER 1
+SELECT TRACK (TRACK 3) MIDI NOTE NUMBER 2
+SELECT TRACK (TRACK 4) MIDI NOTE NUMBER 3
+SELECT TRACK (TRACK 5) MIDI NOTE NUMBER 4
+SELECT TRACK (TRACK 6) MIDI NOTE NUMBER 5
+SELECT TRACK (TRACK 7) MIDI NOTE NUMBER 6
+SELECT TRACK (TRACK 8) MIDI NOTE NUMBER 7
+SELECT TRACK (TRACK 9) MIDI NOTE NUMBER 8
+SELECT TRACK (TRACK 10) MIDI NOTE NUMBER 9
+SELECT TRACK (TRACK 11) MIDI NOTE NUMBER 10
+SELECT TRACK (TRACK 12) MIDI NOTE NUMBER 11
+
+
+== FOR LOOPYSPECIALCHAN MIDI CHANNEL
+TOGGLE RECORD, MUTE, THEN SELECT NEXT TRACK (Selected Track): MIDI CC 127; variable name: toggleRecordMuteThenSelect
+CANCEL PENDING ACTIONS: MIDI CC 124; variable name: cancelPendingCC =
+TOGGLE SESSION PAUSE AND RESTART: MIDI CC 121; variable name: togglePausRestartCC
+CLEAR TRACK (Selected Track): MIDI CC 126; variable name: clearTrackCC
+RESET SESSION: MIDI CC 125; variable name: resetSessionCC 
+
+
