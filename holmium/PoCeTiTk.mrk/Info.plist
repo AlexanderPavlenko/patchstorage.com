@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>scroll</key>
+	<array>
+		<real>0.52972412109375</real>
+		<real>1.12127685546875</real>
+	</array>
+	<key>zoom</key>
+	<real>0.83525854349136353</real>
+</dict>
+</plist>

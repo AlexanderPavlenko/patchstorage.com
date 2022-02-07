@@ -27,6 +27,10 @@ def cleanup
   Dir['*.1'].each do |new|
     FileUtils.mv new, new[0...-2]
   end
+  Dir['*.mrk.zip'].each do |zip|
+    system %(unzip #{zip.shellescape} -d #{File.dirname(zip).shellescape})
+    system %(rm #{zip.shellescape})
+  end
   Dir['*.zip'].each do |zip|
     name = File.basename(zip, '.zip')
     system %(rm -rf #{name.shellescape})
@@ -37,6 +41,17 @@ def cleanup
   puts "Maybe some old versions to remove:", similar.sort_by(&:downcase).join("\n")
 end
 
+# 1. Visit https://patchstorage.com/author/holmium/ and scroll to the end
+# 2. Extract via browser console: copy($x('//*[@id="mason-layout"]/div/div/div/div/a').map(function(a){ return a.getAttribute('href') }))
+Dir.chdir(File.join(__dir__, 'holmium')) do
+  File.open('index.json') do |index|
+    fetch JSON.load(index)
+    cleanup
+  end
+end
+
+exit
+
 # 1. Visit https://patchstorage.com/platform/mozaic/ and scroll to the end
 # 2. Extract via browser console: copy($x('//*[@id="mason-layout"]/div/div/div/div/a').map(function(a){ return a.getAttribute('href') }))
 Dir.chdir(File.join(__dir__, 'Mozaic')) do
@@ -45,3 +60,5 @@ Dir.chdir(File.join(__dir__, 'Mozaic')) do
     cleanup
   end
 end
+
+
