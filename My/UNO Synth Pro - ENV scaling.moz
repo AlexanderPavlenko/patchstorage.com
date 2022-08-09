@@ -1,0 +1,110 @@
+@Description
+Sliders change AMP & FILTER ENV ADSR on UNO Synth Pro.
+XY Pad applies scaling to their total length (inspired by Dreadbox Typhon).
+Shift button resets XY Pad to no-effect position.
+LOOP sliders are ON/OFF and not scaled.
+@End
+
+@OnLoad
+  MIDI_CH = 0
+
+  // AMP ENV knob index
+  AE_A = 0
+  AE_D = 1
+  AE_S = 2
+  AE_R = 3
+
+  // FILTER ENV knob index
+  FE_A = 4
+  FE_D = 5
+  FE_S = 6
+  FE_R = 7
+
+  AE_LOOP = 8
+  FE_LOOP = 9
+
+  // mapped by knob index
+  CC = [59, 60, 61, 62, 53, 54, 55, 56, 63, 57]
+
+  // https://stackoverflow.com/a/5732390
+  SCALE_FROM = -3 // means divided by 4
+  SCALE_TO = 3    // means multiplied by 4
+  SLOPE = (SCALE_TO - SCALE_FROM) / 127
+
+  ShowLayout 3
+  LabelKnobs {UNO Synth Pro - Envelopes Control & Length Scaling}
+  LabelKnob AE_A, {AE:A}
+  LabelKnob AE_D, {AE:D}
+  LabelKnob AE_S, {AE:S}
+  LabelKnob AE_R, {AE:R}
+  LabelKnob FE_A, {FE:A}
+  LabelKnob FE_D, {FE:D}
+  LabelKnob FE_S, {FE:S}
+  LabelKnob FE_R, {FE:R}
+  LabelKnob AE_LOOP, {AE:LOOP}
+  LabelKnob FE_LOOP, {FE:LOOP}
+  LabelXY {X – AMP ENV, Y – FILTER ENV}
+@End
+
+@OnKnobChange
+  knob  = LastKnob
+  if knob = AE_LOOP or knob = FE_LOOP
+    value = Round(GetKnobValue knob)
+    Call @Control
+  else
+    Call @ScaleAndControl
+  endif
+@End
+
+@OnXYChange
+  for knob = 0 to 7
+    Call @ScaleAndControl
+  endfor
+@End
+
+@OnShiftUp
+  SetXYValues 64, 64
+  for knob = 0 to 7
+    Call @ScaleAndControl
+  endfor
+@End
+
+// @param knob
+@ScaleAndControl
+  value = GetKnobValue knob
+
+  if knob >= AE_A and knob <= AE_R
+    factor = GetXValue
+  elseif knob >= FE_A and knob <= FE_R
+    factor = GetYValue
+  endif
+
+  if factor = 64
+    // pad center, default position, no effect
+    factor = 0
+  else
+    factor = SCALE_FROM + (SLOPE * factor)
+  endif
+
+  if factor < 0
+    factor = 1 / Abs(factor - 1)
+  else
+    factor = factor + 1
+  endif
+
+  scaled = Round(value * factor)
+  if scaled > 127
+    scaled = 127
+  endif
+
+  // Log {Slider }, knob, {: }, value, { * }, factor, { = }, scaled
+  value = scaled
+  Call @Control
+@End
+
+// @param knob
+// @param value
+@Control
+  Log {CC }, CC[knob], {: }, value
+  SendMIDICC MIDI_CH, CC[knob], value
+@End
