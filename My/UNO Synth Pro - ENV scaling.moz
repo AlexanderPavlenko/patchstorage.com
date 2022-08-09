@@ -1,7 +1,7 @@
 @Description
 Sliders change AMP & FILTER ENV ADSR on UNO Synth Pro.
 XY Pad applies scaling to their total length (inspired by Dreadbox Typhon).
-Shift button resets XY Pad to no-effect position.
+Shift button resets XY Pad to no-effect position, or pulls envelopes from the synth via SysEx (works in AUM when synth's MIDI output routed to Mozaic) if already in no-effect position.
 LOOP sliders are ON/OFF and not scaled.
 @End
 
@@ -63,10 +63,14 @@ LOOP sliders are ON/OFF and not scaled.
 @End
 
 @OnShiftUp
-  SetXYValues 64, 64
-  for knob = 0 to 7
-    Call @ScaleAndControl
-  endfor
+  if GetXValue = 64 and GetYValue = 64
+    Call @RequestState
+  else
+    SetXYValues 64, 64
+    for knob = 0 to 7
+      Call @ScaleAndControl
+    endfor
+  endif
 @End
 
 // @param knob
@@ -83,7 +87,7 @@ LOOP sliders are ON/OFF and not scaled.
     // pad center, default position, no effect
     factor = 0
   else
-    factor = SCALE_FROM + (SLOPE * factor)
+    factor = SCALE_FROM + (SLOPE * factor) // use TranslateScale instead?
   endif
 
   if factor < 0
@@ -94,7 +98,7 @@ LOOP sliders are ON/OFF and not scaled.
 
   scaled = Round(value * factor)
   if scaled > 127
-    scaled = 127
+    scaled = 127 // use Clip instead?
   endif
 
   // Log {Slider }, knob, {: }, value, { * }, factor, { = }, scaled
@@ -107,4 +111,92 @@ LOOP sliders are ON/OFF and not scaled.
 @Control
   Log {CC }, CC[knob], {: }, value
   SendMIDICC MIDI_CH, CC[knob], value
+@End
+
+
+// let's get crazy and reverse-engineer SysEx
+
+@RequestState
+  request = [0x00,0x21,0x1A,0x02,0x03,0x37,0x00,0x00]
+  SendSysex request, 8
+@End
+
+@OnSysex
+  ReceiveSysex response
+
+  //length = SysexSize
+  //for i = 0 to length
+  //  if prev[i] <> response[i]
+  //    Log {[}, i, {] changed from }, prev[i], { to }, response[i]
+  //  endif
+  //endfor
+  //CopyArray response, prev
+
+  header = [0x00,0x21,0x1A,0x02,0x03,0x00,0x37,0x00]
+  found = YES
+  for i = 0 to 7
+    if response[i] <> header[i]
+      found = NO
+    endif
+  endfor
+
+  if found
+    Call @ParseState
+  endif
+@End
+
+// @param response
+@ParseState
+  // response is long, only intrested in few parts
+  offsets = [70, 65] // AMP ENV, FILTER ENV
+  for part = 0 to 1
+    // values are not aligned to bytes
+    if part = 0
+      // AMP ADSR
+      sizes = [8, 8, 8, 8] // in bits
+      norm  = [2, 2, 1, 2] // to 0..127 for MIDI CC
+    else
+      // FILTER ADSR
+      sizes = [11, 8, 7, 10]
+      norm  = [16, 2, 1, 4]
+    endif
+
+    bits = [] // here we go...
+    range = 7 // last bit not in use, maybe reserved for +/-
+    part_size = 5 // in bytes
+    for i = 0 to part_size - 1
+      byte = response[i + offsets[part]]
+      for j = 0 to range - 1
+        bits[i * range + j] = byte % 2
+        byte = Div byte, 2
+      endfor
+    endfor
+
+    offset = 0
+    for v = 0 to 3
+      value = 0
+      for n = 0 to sizes[v] - 1
+        value = value + bits[offset + n] * (Pow 2, n)
+      endfor
+      value = Div value, norm[v]
+      offset = offset + sizes[v]
+      if part = 0 and v = 0
+        SetKnobValue AE_A, value
+      elseif part = 0 and v = 1
+        SetKnobValue AE_D, value
+      elseif part = 0 and v = 2
+        SetKnobValue AE_S, value
+      elseif part = 0 and v = 3
+        SetKnobValue AE_R, value
+      elseif part = 1 and v = 0
+        SetKnobValue FE_A, value
+      elseif part = 1 and v = 1
+        SetKnobValue FE_D, value
+      elseif part = 1 and v = 2
+        SetKnobValue FE_S, value
+      elseif part = 1 and v = 3
+        SetKnobValue FE_R, value
+      endif
+    endfor
+  endfor
 @End
