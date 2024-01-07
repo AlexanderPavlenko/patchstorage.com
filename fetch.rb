@@ -20,7 +20,7 @@ def fetch(patches)
   (patches || []).each do |patch|
     puts "Fetching #{patch}"
     html = URI.open(patch).read
-    url  = URI.extract(html.match(%r{a id="DownloadPatch".+?</a>})[0])[0]
+    url  = URI.extract(html.match(%r{href="https://patchstorage.com/wp-content/uploads/.+?" download>})[0])[0]
     if url.nil?
       puts "Failed to parse page"
       next
@@ -56,7 +56,7 @@ end
 # index.json: extract via browser console
 # copy($x('//*[@id="mason-layout"]/div/div/div/div/a').map(function(a){ return a.getAttribute('href') }))
 
-fetch_all 'holmium'
+#fetch_all 'holmium'
 
 fetch_all 'Mozaic'
 # omitted:

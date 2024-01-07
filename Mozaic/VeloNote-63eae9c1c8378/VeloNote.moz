@@ -1,0 +1,2029 @@
+// VeloNote (c) 2023 Moe Saint Evergreen.
+// Maps Input Velocities to Notes ignoring input note(s).
+// Generates NoteOff with delay (if configured).
+// Includes channel mapping, and some basic random options.
+// Supports setting a scale and root note to indicate which tones to include.
+// Comes with favorite presets for ODD ball, set via pads. See @MySetPresets.
+
+// Initializes variables and labels and presets, if not yet initialized.
+@OnLoad
+  SetShortName {VeloNote}
+  Log        {VeloNote 1.01a32}
+  LabelKnobs {VeloNote 1.01a32}
+  
+  if Unassigned initVeloNote
+    initVeloNote = 1
+    
+    debug = false // shift for 4s toggles debug unless used to save a pad preset
+    layout = 0 // shift otherwise shows next layout unless used to save a pad preset
+    timeShiftDown = -1 // not shifting right now
+    maxMozaicScale = 24 // maximum index for mozaic's preset scales (excluding custom)
+    
+    // track sustain used to delay note off until amount of notes
+    // note tracked after note evaluation
+    // arrays are shifted when note sustain stopped
+    sustainNotes[0] = [0] // note being sustained
+    sustainVelos[0] = [0] // velocity when note sent
+    sustainChans[0] = [0] // channel to which note sent
+    sustainTimes[0] = [0] // time sustain started, to prevent overly long sustain
+    numSustainNotes = 0 // amount of notes in sustainNotes being sustained
+    maxSendOff = 16000 // 16s for maximum delay before note off
+    
+    knobX = -2 // special index values to indicate the XY like they were knobs
+    knobY = -1
+    
+    call @MySetKnobMapping // sets variables indicating which knobs are used
+    call @MyLabelKnobs // initialize knob labels based on mapping
+    call @MySetCustomScales // Sets preset custom scales array
+    call @MySetPresets // Sets the preset value array and sets default preset
+    call @MyLoadPreset // load knob values from preset to initialize variables
+    
+    // NoteStates are only needed for a device that sends note off (sendOff = 0).
+    // Experimental since the primary testing device, ODD ball, does not send note off.
+    ResetNoteStates 0
+  endif
+  
+@End
+
+// Sets which knobs control which values.
+@MySetKnobMapping
+  // knobX and knobY are special index values to indicate the XY like they were knobs where supported
+  // See @MySetRandom for special behavior of RandOffset and RandGroup.
+  knobRandOffset = knobX // Random semi-tone offset, 1 picks -1, 0, 1. 0 is none, 127 is all
+  knobRandGroup  = knobY // Group Notes (12 semi-tones is octave), random within group
+  // These can be rearranged freely without impacting preset array.
+  knobInVeloMin  = 0 // Minimum velocity, below this is silenced
+  knobInVeloMax  = 1 // Maximum velocity, above this gets NoteMax+1
+  knobNoteMin    = 2 // Minimum note of mapping. Input note used when NoteMin,NoteMax are 0,0.
+  knobNoteMax    = 3 // Maximum note of mapping. Random and Scale are not used when NoteMin,NoteMax are 0,0.
+  knobOctaveOfs  = 4 // Octave Offset +- (*12) to NoteMin/Max, -5 to +5, 0 offset at 64 (middle)
+  knobSendOff    = 5 // Delay to Send Note Off, 0 to disable
+  knobOutVeloMin = 6 // Minimum output velocity: if min<max and num notes < num input velocites
+  knobOutVeloMax = 7 // Maximum output velocity: sent on all unless OutVeloMin differs
+  knobNoteScale  = 8 // Selects a built in scale or a custom scale, 0 = Chromatic (every note)
+  knobRootNote   = 9 // Selects a root note for scale, ignored for Chromatic, 0 = same as NoteMin
+  // These knobs require using Shift to change display for more knobs to access.
+  knobInChan     = 10 // Input Channel, 1 based, mapped to 0 to 16, 0 = omni
+  knobOutChan    = 11 // Output Channel, 1 based, mapped to 0 to 16. 0 = same as In
+  knobSustain    = 12 // Sustain, 0 = None, then mapped 1-8 alternating continue option yes/no
+  
+  // Set which preset values are related to these, without impacting knob settings
+  // Once published, I will not change the order of these columns even if I change knobs used.
+  presetRandOffset = 0
+  presetRandGroup  = 1
+  presetInVeloMin  = 2
+  presetInVeloMax  = 3
+  presetNoteMin    = 4
+  presetNoteMax    = 5
+  presetOctaveOfs  = 6
+  presetSendOff    = 7
+  presetOutVeloMin = 8
+  presetOutVeloMax = 9
+  presetNoteScale  = 10
+  presetRootNote   = 11
+  presetInChan     = 12
+  presetOutChan    = 13
+  presetSustain    = 14
+  // up to 23 : reserved enough for future mappings
+@End
+
+// Initializes custom scales. Customize to add/modify favorite default scales.
+// This uses a different mechanism to implement custom scale than Mozaic.
+// Each custom scale is a series of (up to maxScaleVals) semi-tone hops from root or previous note.
+// First array entry is the amount of hops from root to next included note value.
+// Second entry is the additional hops added to that for the next note value.
+// eg. 1,2,1,0 means after root add 1 tone for next note, then add 2 tones for next, then add 1 tone
+// All 1s would be the same scale as Chromatic.
+// 0 ends scale definition (or when maxScaleVals hop values applied, if 0).
+// Scale will be repeatedly applied from root to end of range.
+// Notes prior to root are determined by reverse hops (backwards through array from root).
+// The first negative (if any) indicates a descending scale, with same amount of negative hops.
+// Total entries and positive hops of any descending scale 
+// must equal total entries and hops of ascending scale.
+// Scales are ignored when NoteMin, NoteMax are 0,0 (input note used).
+@MySetCustomScales
+  maxScaleVals = 24 // maximum amount of scale hops in custom scale array
+  numCustScales = 0 // to be amount of custom scales defined
+  
+  // Example minor melodic with descending scale.
+  scales[numCustScales *maxScaleVals] = [  2,  1,  2,  2,  2,  2,  1, -2, -2, -1, -2, -2, -1, -2,  0]
+  numCustScales = numCustScales + 1 // increment for each scale after using as index to set
+  
+  // Koto scale Hirajoshi Iwato In
+  scales[numCustScales *maxScaleVals] = [  1,  4,  1,  4,  2]
+  numCustScales = numCustScales + 1
+  
+  maxScale = maxMozaicScale+numCustScales
+  numScales = maxScale+1 // including zero
+@End
+
+// Initializes presets. Customize to add favorite defaults on script load
+@MySetPresets
+  // Presets mapped to pressing a pad. First preset (0) is loaded on load.
+  // Shift+Pad saves an override of the preset (reload for defaults in code).
+  // Preset array for each pad consists of 24 (maxPreVals) values.
+  // See @MySetKnobMapping for the current mapping (or column abbreviations below).
+  // These presets are the converted values derived from the knob values (if converted).
+  
+  // preset[0*maxPreVals] = Default 1 to 1 mapping, 60+1 keys from 60 velocities + over (no octave offset)
+  //  Used with ODD ball which only sends 64 noteon at velocity of ball hit.
+  //  500ms to send noteOff.
+  //  Maps to typical drum mix notes, plus a few extra (> InVeloMax is 95, B6).
+  //  Outputs all at max velocity.
+  //  Affects all input channels, Outputs on same channel as input
+  //  Not random.
+  // preset[4*maxPreVals] = Similar to above, but random note within octave based on velocity
+  
+  // preset[1,2,3*maxPreVals] = Maps 3+1 notes of middle C, C#, D (,D#) for octaves C4, C3, C5.
+  //  Used with ODD ball which only sends 64 noteon at velocity of ball hit.
+  //  1000ms to send noteOff (typically triggers longer sound)
+  //  Maps intended to trigger loop/sampler voices/words for fun effect with ball.
+  //  Outputs all at max velocity.
+  //  Affects all input channels, Outputs on same channel as input
+  //  Not random.
+  
+  // preset[4*maxPreVals] = Default 2 to 1 mapping for a scale of 7 notes (excluding second root).
+  //  Used with ODD ball which only sends 64 noteon at velocity of ball hit.
+  //  500ms to send noteOff (used with ODD ball which only sends noteon)
+  //  Maps to B 35 to 82 for 4 octaves of 7 notes each. Adjust as needed.
+  //  Default scale is custom minor melodic in C with separate descending scale.
+  //  Outputs all at max velocity.
+  //  Affects all input channels, Outputs on same channel as input
+  //  Not random.
+  // preset[5*maxPreVals] = Similar to above, but random note within octave based on velocity.
+  
+  // other presets, currently a copy of first
+  
+  maxPreVals = 24 // maximum amount of preset columns/values in array
+  
+  //               preset : RnOfs, RnGrp, InVMn, InVMx, NoteMn, NoteMx, OctOfs, SenOff, OutVMn, OutVMax, Scale, Root, InCh, OutCh, Sus
+  presets[0 *maxPreVals] = [0    , 0    , 8    , 67   , 35    , 94    , 0     , 500   , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[1 *maxPreVals] = [0    , 0    , 8    , 67   , 60    , 62    , 0     , 1000  , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[2 *maxPreVals] = [0    , 0    , 8    , 67   , 60    , 62    , -1    , 1000  , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[3 *maxPreVals] = [0    , 0    , 8    , 67   , 60    , 62    , 1     , 1000  , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[4 *maxPreVals] = [0    , 0    , 8    , 63   , 35    , 82    , 0     , 500   , 127   , 127    , 25   , 0   , 0   , 0    ]
+  presets[5 *maxPreVals] = [127  , 1    , 8    , 63   , 35    , 82    , 0     , 500   , 127   , 127    , 25   , 0   , 0   , 0    ]
+  presets[6 *maxPreVals] = [0    , 0    , 3    , 58   , 35    , 58    , 0     , 8000  , 127   , 127    , 26   , 0   , 0   , 0    , 3   ]
+  presets[7 *maxPreVals] = [0    , 0    , 3    , 58   , 35    , 58    , 1     , 8000  , 127   , 127    , 26   , 0   , 0   , 0    , 3   ]
+  presets[8 *maxPreVals] = [0    , 0    , 3    , 58   , 35    , 58    , 2     , 8000  , 127   , 127    , 26   , 0   , 0   , 0    , 3   ]
+  presets[9 *maxPreVals] = [0    , 0    , 8    , 67   , 35    , 94    , 0     , 500   , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[10*maxPreVals] = [0    , 0    , 8    , 67   , 35    , 94    , 0     , 500   , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[11*maxPreVals] = [0    , 0    , 8    , 67   , 35    , 94    , 0     , 500   , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[12*maxPreVals] = [0    , 0    , 8    , 67   , 35    , 94    , 0     , 500   , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[13*maxPreVals] = [0    , 0    , 8    , 67   , 35    , 94    , 0     , 500   , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[14*maxPreVals] = [0    , 0    , 8    , 67   , 35    , 94    , 0     , 500   , 127   , 127    , 0    , 0   , 0   , 0    ]
+  presets[15*maxPreVals] = [0    , 0    , 8    , 67   , 35    , 94    , 0     , 500   , 127   , 127    , 0    , 0   , 0   , 0    ]
+  
+  // rename these to match preferences
+  LabelPads {Presets}
+  LabelPad 0 , {Odd 35-94} // chromatic scale
+  LabelPad 1 , {Odd C4-D4} // 3+1 notes, such as to trigger clips
+  LabelPad 2 , {Odd C3-D3} // 3+1 notes, octave lower, such as to trigger clips
+  LabelPad 3 , {Odd C5-D5} // 3+1 notes, octave higher, such as to trigger clips
+  // access these others via quick Shift press to change layout
+  LabelPad 4 , {Odd 35-82 Minor} // 4 octaves of minor melodic scale with alternate descending scale
+  LabelPad 5 , {Rand 35-82 Minor} // random scaled note within octave based on velocity
+  LabelPad 6 , {Odd 35-58 S+C} // Light touch, Scale 2 octaves with sustain: juggle-pop-mix
+  LabelPad 7 , {Odd 35-58 S+C+1} // Light touch, Scale 2 octaves with sustain, 1 octave higher
+  LabelPad 8 , {Odd 35-58 S+C+2} // Light touch, Scale 2 octaves with sustain, 2 octaves higher
+  LabelPad 9 , {Preset 10}
+  LabelPad 10, {Preset 11}
+  LabelPad 11, {Preset 12}
+  LabelPad 12, {Preset 13}
+  LabelPad 13, {Preset 14}
+  LabelPad 14, {Preset 15}
+  LabelPad 15, {Preset 16}
+  
+  // set default preset to load
+  preset = 0
+  
+@End
+
+// Labels each knob (although these will be replaced with preset values).
+@MyLabelKnobs
+  if knobSendOff >= 0
+    LabelKnob knobSendOff, {SendOff}
+  endif
+  if knobNoteMin >= 0
+    LabelKnob knobNoteMin, {NoteMin}
+  endif
+  if knobNoteMax >= 0
+    LabelKnob knobNoteMax, {NoteMax}
+  endif
+  if knobOutVeloMin >= 0
+    LabelKnob knobOutVeloMin, {OutVeloMin}
+  endif
+  if knobOutVeloMax >= 0
+    LabelKnob knobOutVeloMax, {OutVeloMax}
+  endif
+  if knobInVeloMin >= 0
+    LabelKnob knobInVeloMin, {InVeloMin}
+  endif
+  if knobInVeloMax >= 0
+    LabelKnob knobInVeloMax, {InVeloMax}
+  endif
+  if knobOctaveOfs >= 0
+    LabelKnob knobOctaveOfs, {OctaveOfs}
+  endif
+  if knobNoteScale >= 0
+    LabelKnob knobNoteScale, {Scale}
+  endif
+  if knobRootNote >= 0
+    LabelKnob knobRootNote, {Root}
+  endif
+  if knobInChan >= 0
+    LabelKnob knobInChan, {InChan}
+  endif
+  if knobOutChan >= 0
+    LabelKnob knobOutChan, {OutChan}
+  endif
+  if knobRandOffset = knobX and knobRandGroup = knobY
+    LabelXY {Random}
+  elseif knobRandOffset >= 0 and knobRandGroup >= 0
+    LabelKnob knobRandOffset, {RandOffset}
+    LabelKnob knobRandGroup, {RandGroup}
+  endif
+  if knobSustain >= 0
+    LabelKnob knobSustain, {Sustain}
+  endif
+  
+@End
+
+// Updates variables and labels dependent on knob value
+@OnKnobChange
+  lk = LastKnob
+  if lk = knobSendOff
+    call @MySetSendOff
+    if sendOff = 0
+      LabelKnobs {VeloNote Send Off None}
+    else
+      LabelKnobs {VeloNote Send Off }, sendOff, {ms}
+    endif
+  elseif lk = knobNoteMin
+    call @MySetNoteMin
+    if valueNoteMin = 0 and valueNoteMax = 0
+      LabelKnobs {VeloNote Use Input Note}
+    else
+      LabelKnobs {VeloNote NoteMin }, valueNoteMin, { }, (NoteName valueNoteMin, true)
+    endif
+  elseif lk = knobNoteMax
+    call @MySetNoteMax
+    if valueNoteMin = 0 and valueNoteMax = 0
+      LabelKnobs {VeloNote Use Input Note}
+    else
+      LabelKnobs {VeloNote NoteMax }, valueNoteMax, { }, (NoteName valueNoteMax, true)
+    endif
+  elseif lk = knobInVeloMin
+    call @MySetInVeloMin
+    LabelKnobs {VeloNote InVeloMin }, valueInVeloMin
+  elseif lk = knobInVeloMax
+    call @MySetInVeloMax
+    LabelKnobs {VeloNote InVeloMax }, valueInVeloMax
+  elseif lk = knobOutVeloMin
+    call @MySetOutVeloMin
+    LabelKnobs {VeloNote OutVeloMin }, valueOutVeloMin
+  elseif lk = knobOutVeloMax
+    call @MySetOutVeloMax
+    LabelKnobs {VeloNote OutVeloMax }, valueOutVeloMax
+  elseif lk = knobOctaveOfs
+    call @MySetOctaveOfs
+    if octaveOffset < 0
+      LabelKnobs {VeloNote OctaveOfs }, octaveOffset
+    else
+      LabelKnobs {VeloNote OctaveOfs +}, octaveOffset
+    endif
+  elseif lk = knobNoteScale
+    call @MySetNoteScale
+    call @MyLabelKnobsNoteScale
+  elseif lk = knobRootNote
+    call @MySetRootNote
+    call @MyLabelKnobsRootNote
+  elseif lk = knobInChan
+    call @MySetInChan
+    call @MyLabelChan
+  elseif lk = knobOutChan
+    call @MySetOutChan
+    call @MyLabelChan
+  elseif lk = knobRandOffset // if changed to a knob instead of xy
+    call @MySetRandom
+    call @MyLabelRandom
+  elseif lk = knobRandGroup
+    call @MySetRandom
+    call @MyLabelRandom
+  elseif lk = knobSustain
+    call @MySetSustain
+    if sustain = 0
+      LabelKnobs {VeloNote Sustain None}
+    elseif sustainContinue = 0
+      LabelKnobs {VeloNote Sustain }, sustain, { notes}
+    else // sustainContinue = 1
+      LabelKnobs {VeloNote Sustain }, sustain, { notes + Continue}
+    endif
+  endif
+  
+@End
+
+// Updates variables and labels dependent on xy values. See @MySetRandom.
+@OnXYChange
+  if knobRandOffset = knobX and knobRandGroup = knobY
+    call @MySetRandom
+  endif
+  
+@End
+
+// When shift pressed, tracks time shifting started and resets state of preset saving.
+@OnShiftDown
+  timeShiftDown = SystemTime // milliseconds
+  presetSaving = -1 // if zero or positive, then a pad was pressed to save
+  
+@End
+
+// When shift released, increments layout (or triggers debug if held 4s)
+// unless a preset was saved by touching a pad.
+@OnShiftUp
+  if timeShiftDown > 0
+    if presetSaving < 0
+      // control layout and debug unless a preset was saved
+      if SystemTime - timeShiftDown >= 4000 // press shift 4 seconds to toggle debug
+        debug = NOT debug
+        if debug
+          LabelKnobs {VeloNote Debug On}
+          Log {Debug On}
+        else
+          LabelKnobs {VeloNote Debug Off}
+          Log {Debug Off}
+        endif
+      else
+        layout = layout + 1
+        if layout >= 4 // skips minimal layout 4
+          layout = 0
+        endif
+        Log {Show Layout }, layout
+        ShowLayout layout
+      endif
+    else
+      presetSaving = -1
+    endif
+    timeShiftDown = -1
+  endif
+  
+@End
+
+// When pad pressed, loads a preset related to pad or saves an override when shifted.
+@OnPadDown
+  if timeShiftDown > 0 // save when shift held down
+    presetSaving = LastPad
+    call @MySavePreset
+  else // else load
+    preset = LastPad
+    call @MyLoadPreset
+  endif
+  
+@End
+
+// When pad released, does nothing since pad behavior controlled via @OnPadDown
+@OnPadUp
+  // do nothing, controlled by down
+@End
+
+// Sets the variables, Knobs and XY based on the value of preset (0-15) related to Pad pressed.
+@MyLoadPreset
+  presetOffset = preset * maxPreVals // start position in preset array
+  if presetOffset >= 0
+    valueRandOffset = presets[presetOffset + presetRandOffset]
+    valueRandGroup  = presets[presetOffset + presetRandGroup ]
+    valueInVeloMin  = presets[presetOffset + presetInVeloMin ]
+    valueInVeloMax  = presets[presetOffset + presetInVeloMax ]
+    valueNoteMin    = presets[presetOffset + presetNoteMin   ]
+    valueNoteMax    = presets[presetOffset + presetNoteMax   ]
+    octaveOffset    = presets[presetOffset + presetOctaveOfs ]
+    sendOff         = presets[presetOffset + presetSendOff   ]
+    valueOutVeloMin = presets[presetOffset + presetOutVeloMin]
+    valueOutVeloMax = presets[presetOffset + presetOutVeloMax]
+    noteScale       = presets[presetOffset + presetNoteScale ]
+    valueRootNote   = presets[presetOffset + presetRootNote  ]
+    inChannel       = presets[presetOffset + presetInChan    ]
+    outChannel      = presets[presetOffset + presetOutChan   ]
+    valueSustainDiv = presets[presetOffset + presetSustain   ]
+    
+    // reverse converted values
+    valueOctaveOfs = (octaveOffset*12) + 64
+    valueSendOff = Round ((sendOff * 128) / maxSendOff)
+    if valueSendOff > 127 then
+      valueSendOff = 127
+    endif
+    if inChannel = 0
+      valueInChan = 0 // move to dial min
+    elseif inChannel >= 16
+      inChannel = 16 // move to dial max
+      valueInChan = 127
+    else
+      valueInChan = RoundUp (( inChannel * 128 ) / 17) + 3 // move to middle of section
+    endif
+    if outChannel = 0
+      valueOutChan = 0 // move to dial min
+    elseif outChannel >= 16
+      outChannel = 16 // move to dial max
+      valueOutChan = 127
+    else
+      valueOutChan = RoundUp (( outChannel * 128 ) / 17) + 3 // move to middle of section
+    endif
+    if noteScale = 0
+      valueNoteScale = 0 // move to dial min
+    elseif noteScale >= maxScale
+      noteScale = maxScale
+      valueNoteScale = 127 // move to dial max
+    elseif numScales <= 64
+      valueNoteScale = RoundUp (( noteScale * 128 ) / numScales)
+    else
+      valueNoteScale = noteScale
+    endif
+    custScale = -1 // default to not using the custom scales, 0 is first custom entry
+    if noteScale > maxMozaicScale
+      custScale = (noteScale - maxMozaicScale) - 1 // 0 based reference to custom scales
+    endif
+    if valueSustainDiv <= 1
+      sustain = 0
+      sustainContinue = 0
+      valueSustain = 0
+    else
+      sustain = RoundDown(valueSustainDiv / 2)
+      sustainContinue = valueSustainDiv % 2
+      valueSustain = (valueSustainDiv - 2) * 8
+    endif
+    
+    call @MySetNoteMinMax
+    call @MySetInVeloMinMax
+    call @MySetOutVeloMinMax
+    call @MyGenerateScale
+    
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      SetXYValues valueRandOffset, valueRandGroup
+      call @MyLabelRandom
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      SetKnobValue knobRandOffset, valueRandOffset
+      SetKnobValue knobRandGroup, valueRandGroup
+      call @MyLabelRandOffset
+      call @MyLabelRandGroup
+    endif
+    if knobSendOff >= 0
+      SetKnobValue knobSendOff, valueSendOff
+      call @MyLabelSendOff
+    endif
+    if knobNoteMin >= 0
+      SetKnobValue knobNoteMin, valueNoteMin
+      call @MyLabelNoteMin
+    endif
+    if knobNoteMax >= 0
+      SetKnobValue knobNoteMax, valueNoteMax
+      call @MyLabelNoteMax
+    endif
+    if knobOutVeloMin >= 0
+      SetKnobValue knobOutVeloMin, valueOutVeloMin
+      call @MyLabelOutVeloMin
+    endif
+    if knobOutVeloMax >= 0
+      SetKnobValue knobOutVeloMax, valueOutVeloMax
+      call @MyLabelOutVeloMax
+    endif
+    if knobInVeloMin >= 0
+      SetKnobValue knobInVeloMin, valueInVeloMin
+      call @MyLabelInVeloMin
+    endif
+    if knobInVeloMax >= 0
+      SetKnobValue knobInVeloMax, valueInVeloMax
+      call @MyLabelInVeloMax
+    endif
+    if knobOctaveOfs >= 0
+      SetKnobValue knobOctaveOfs, valueOctaveOfs
+      call @MyLabelOctaveOfs
+    endif
+    if knobNoteScale >= 0
+      SetKnobValue knobNoteScale, valueNoteScale
+      call @MyLabelNoteScale
+    endif
+    if knobRootNote >= 0
+      SetKnobValue knobRootNote, valueRootNote
+      call @MyLabelRootNote
+    endif
+    if knobInChan >= 0
+      SetKnobValue knobInChan, valueInChan
+      call @MyLabelInChan
+    endif
+    if knobOutChan >= 0
+      SetKnobValue knobOutChan, valueOutChan
+      call @MyLabelOutChan
+    endif
+    if knobSustain >= 0
+      SetKnobValue knobSustain, valueSustain
+      call @MyLabelSustain
+    endif
+    
+    LabelPads {Presets Loaded from }, (preset+1)
+    Log {Presets Loaded from }, (preset+1)
+  endif
+  
+@End
+
+// Saves current variable configuration for Pad in presetSaving (0-15) 
+// related to Pad pressed with Shift down.
+@MySavePreset
+  saveOffset = presetSaving * maxPreVals
+  if saveOffset >= 0
+    presets[saveOffset + presetRandOffset] = valueRandOffset
+    presets[saveOffset + presetRandGroup ] = valueRandGroup
+    presets[saveOffset + presetInVeloMin ] = valueInVeloMin 
+    presets[saveOffset + presetInVeloMax ] = valueInVeloMax 
+    presets[saveOffset + presetNoteMin   ] = valueNoteMin   
+    presets[saveOffset + presetNoteMax   ] = valueNoteMax   
+    presets[saveOffset + presetOctaveOfs ] = octaveOffset
+    presets[saveOffset + presetSendOff   ] = sendOff
+    presets[saveOffset + presetOutVeloMin] = valueOutVeloMin
+    presets[saveOffset + presetOutVeloMax] = valueOutVeloMax
+    presets[saveOffset + presetNoteScale ] = noteScale
+    presets[saveOffset + presetRootNote  ] = valueRootNote
+    presets[saveOffset + presetInChan    ] = inChannel
+    presets[saveOffset + presetOutChan   ] = outChannel
+    presets[saveOffset + presetSustain   ] = valueSustainDiv
+    LabelPad presetSaving, {Preset }, (presetSaving+1) // override any default name
+    LabelPads {Presets Saved to }, (presetSaving+1)
+    Log {Presets Saved to }, (presetSaving+1)
+    if debug
+      Log {presets[}, presetSaving, {*maxPreVals] = [}, presets[saveOffset + 0], {, }, presets[saveOffset + 1], {, }, presets[saveOffset + 2], {, }, presets[saveOffset + 3], {, }, presets[saveOffset + 4], {, }, presets[saveOffset + 5], {, }, presets[saveOffset + 6], {, }, presets[saveOffset + 7], {, }, presets[saveOffset + 8], {, }, presets[saveOffset + 9], {, }, presets[saveOffset + 10], {, }, presets[saveOffset + 11], {, }, presets[saveOffset + 12], {, }, presets[saveOffset + 13], {, }, presets[saveOffset + 14], {]}
+    endif
+    
+  endif
+  
+@End
+
+// Sets sendOff to a millisecond delay to send note off after sending note on
+// based on current value of knob 0.
+// SendOff will be 0 (off) to maxSendOff.
+// When 0 (off), expects device to send note off, and tracks actual note to turn off.
+// 0 is experimental since the primary testing device, ODD ball, does not send note off.
+@MySetSendOff
+  if knobSendOff >= 0
+    valueSendOff = Round GetKnobValue knobSendOff
+    sendOff = Round ( (valueSendOff * maxSendOff) / 128 )
+  endif
+  call @MyLabelSendOff
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelSendOff
+  if knobSendOff >= 0
+    if sendOff = 0
+      LabelKnob knobSendOff, {Off None}
+    else
+      LabelKnob knobSendOff, {Off }, sendOff
+    endif
+  endif
+  
+@End
+
+// Sets the minimum output note (valueNoteMin) mapped from velocity (or available for randomization).
+// Input note used when NoteMin,NoteMax are 0,0.
+// Random and Scale are not used when NoteMin,NoteMax are 0,0.
+@MySetNoteMin
+  if knobNoteMin >= 0
+    valueNoteMin = Round GetKnobValue knobNoteMin
+  endif
+  call @MySetNoteMinMax
+  call @MyLabelNoteMin
+  call @MyGenerateScale
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelNoteMin
+  if knobNoteMin >= 0
+    LabelKnob knobNoteMin, {Nmn }, valueNoteMin
+  endif
+  
+@End
+
+// Sets the maximum output note (valueNoteMax) mapped from velocity (or available for randomization).
+// Input note used when NoteMin,NoteMax are 0,0.
+// Random and Scale are not used when NoteMin,NoteMax are 0,0.
+@MySetNoteMax
+  if knobNoteMax >= 0
+    valueNoteMax = Round GetKnobValue knobNoteMax
+  endif
+  call @MySetNoteMinMax
+  call @MyLabelNoteMax
+  call @MyGenerateScale
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelNoteMax
+  if knobNoteMax >= 0
+    LabelKnob knobNoteMax, {Nmx }, valueNoteMax
+  endif
+  
+@End
+
+// Sets noteMin and noteMax to actual min/max based upon which knob setting is larger.
+// Also applies any octaveOffset to the min/max (within 0-127 min/max).
+@MySetNoteMinMax
+  noteMin = valueNoteMin
+  if valueNoteMax >= noteMin
+    noteMax = valueNoteMax
+  else
+    noteMax = noteMin
+    noteMin = valueNoteMax
+  endif
+  
+  if octaveOffset<>0
+    // add or subtract an amount of octaves (*12 semitones) 
+    // to NoteMin and NoteMax (kept within 0 to 127)
+    noteOffset = octaveOffset * 12
+    if noteOffset < 0
+      boundaryOffset = noteMin + noteOffset // add negative
+      if boundaryOffset < 0
+        noteOffset = noteOffset - boundaryOffset // subtract negative, less negative
+        noteMin = 0
+      else
+        noteMin = boundaryOffset
+      endif
+      noteMax = noteMax + noteOffset
+    else
+      boundaryOffset = noteMax + noteOffset // add positive
+      if boundaryOffset > 127
+        noteOffset = noteOffset - (boundaryOffset-127) // subtract overage
+        noteMax = 127
+      else
+        noteMax = boundaryOffset
+      endif
+      noteMin = noteMin + noteOffset
+    endif
+  endif
+  
+@End
+
+// Sets the minimum input velocity(valueInVeloMin). Below this is silenced.
+@MySetInVeloMin
+  if knobInVeloMin >= 0
+    valueInVeloMin = Round GetKnobValue knobInVeloMin
+  endif
+  call @MySetInVeloMinMax
+  call @MyLabelInVeloMin
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelInVeloMin
+  if knobInVeloMin >= 0
+    LabelKnob knobInVeloMin, {iVmn }, valueInVeloMin
+  endif
+  
+@End
+
+// Sets the maximum input velocity (valueInVeloMax). Above this gets NoteMax+1.
+@MySetInVeloMax
+  if knobInVeloMax >= 0
+    valueInVeloMax = Round GetKnobValue knobInVeloMax
+  endif
+  call @MySetInVeloMinMax
+  call @MyLabelInVeloMax
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelInVeloMax
+  if knobInVeloMax >= 0
+    LabelKnob knobInVeloMax, {iVmx }, valueInVeloMax
+  endif
+  
+@End
+
+// Sets veloMin, veloMax to actual min/max based upon which knob setting is larger.
+@MySetInVeloMinMax
+  veloMin = valueInVeloMin
+  if valueInVeloMax >= veloMin
+    veloMax = valueInVeloMax
+  else
+    veloMax = veloMin
+    veloMin = valueInVeloMax
+  endif
+  
+@End
+
+
+// Sets the minimum output velocity (valueOutVeloMin).
+// Used when valueOutVeloMin<valueOutVeloMax 
+// and when num notes < num input velocites
+// by mapping velocity remainder to the min/max output range.
+// Also used to randomize velocity 
+// when valueRandOffset,valueRandGroup are not 0,0 nor 127,127.
+@MySetOutVeloMin
+  if knobOutVeloMin >= 0
+    valueOutVeloMin = Round GetKnobValue knobOutVeloMin
+  endif
+  call @MySetOutVeloMinMax
+  call @MyLabelOutVeloMin
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelOutVeloMin
+  if knobOutVeloMin >= 0
+    LabelKnob knobOutVeloMin, {oVmn }, valueOutVeloMin
+  endif
+  
+@End
+
+// Sets the maximum output velocity (valueOutVeloMax).
+// Sent on all output notes unless valueOutVeloMin differs.
+// Otherwise provides the upper range of output velocity.
+// See @MySetOutVeloMin.
+@MySetOutVeloMax
+  if knobOutVeloMax >= 0
+    valueOutVeloMax = Round GetKnobValue knobOutVeloMax
+  endif
+  call @MySetOutVeloMinMax
+  call @MyLabelOutVeloMax
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelOutVeloMax
+  if knobOutVeloMax >= 0
+    LabelKnob knobOutVeloMax, {oVmx }, valueOutVeloMax
+  endif
+  
+@End
+
+// Sets outVeloMin, outVeloMax to actual min/max based upon which knob setting is larger.
+@MySetOutVeloMinMax
+  outVeloMin = valueOutVeloMin // OutVeloMin
+  if valueOutVeloMax >= outVeloMin
+    outVeloMax = valueOutVeloMax
+  else
+    outVeloMax = outVeloMin
+    outVeloMin = valueOutVeloMax
+  endif
+  
+@End
+
+// Sets octaveOffset to an amount of octaves (*12 semitones) 
+// subtracted or added to NoteMin and NoteMax (within the 0 to 127 range only),
+// based on current value of knob 7.
+// Splits knob 7 into 11 values (-5 to +5), with middle as zero
+// (knob 7 value 64 becomes 0 offset).
+@MySetOctaveOfs
+  if knobOctaveOfs >= 0
+    valueOctaveOfs = Round GetKnobValue knobOctaveOfs
+    if valueOctaveOfs < 10 // bottom of range, a little smaller section
+      octaveOffset = -5
+    elseif valueOctaveOfs > 116 // top of range, a little smaller section
+      octaveOffset = 5
+    else // others are sections of 12 (similar to amount of semitones), 0 in middle
+      octaveOffset = (RoundDown ((valueOctaveOfs-10) / 12)) - 4
+    endif
+  endif
+  call @MySetNoteMinMax
+  call @MyLabelOctaveOfs
+  call @MyGenerateScale
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelOctaveOfs
+  if knobOctaveOfs >= 0
+    if octaveOffset < 0
+      LabelKnob knobOctaveOfs, {Oct }, octaveOffset
+    else
+      LabelKnob knobOctaveOfs, {Oct +}, octaveOffset
+    endif
+  endif
+  
+@End
+
+// Selects a built in scale or a custom scale.
+// 0 = Chromatic (every note)
+// 1-24 = Other built-in scales, see Mozaic.pdf.
+// 25+ = Use the internal custom scale array, (NoteScale-25)x12 (supports up to 12 tone hops).
+@MySetNoteScale
+  custScale = -1 // default to not using the custom scales, 0 is first custom entry
+  if knobNoteScale >= 0
+    valueNoteScale = Round GetKnobValue knobNoteScale
+    if numScales <= 64
+      noteScale = RoundDown (( valueNoteScale * numScales ) / 128) // 0 to ...
+    else
+      noteScale = valueNoteScale
+      if noteScale > maxScale
+        noteScale = maxScale
+      endif
+    endif
+  endif
+  if noteScale > maxMozaicScale
+    custScale = (noteScale - maxMozaicScale) - 1 // 0 based reference to custom scales
+  endif
+  call @MyLabelNoteScale
+  call @MyGenerateScale
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelNoteScale
+  if knobNoteScale >= 0
+    if noteScale <= maxMozaicScale
+      LabelKnob knobNoteScale, {Scale }, noteScale
+    else
+      LabelKnob knobNoteScale, {Scale +}, (custScale+1)
+    endif
+  endif
+  
+@End
+
+// Selects a root note for scale, ignored for Chromatic.
+// 0 = same as NoteMin.
+@MySetRootNote
+  if knobRootNote >= 0
+    valueRootNote = Round GetKnobValue knobRootNote
+  endif
+  call @MyLabelRootNote
+  call @MyGenerateScale
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelRootNote
+  if knobRootNote >= 0
+    if valueRootNote = 127
+      LabelKnob knobRootNote, {Root=Nmn}
+    else
+      LabelKnob knobRootNote, {Root }, valueRootNote
+    endif
+  endif
+  
+@End
+
+// Temporarily labels the knobs title with the name of the note scale.
+@MyLabelKnobsNoteScale
+  if knobNoteScale >= 0
+    if noteScale <= maxMozaicScale
+      LabelKnobs {VeloNote Scale }, (ScaleName noteScale)
+    
+    // To provide custom names, elseif for each custom name
+    // Since Mozaic does not seem to support custom arrays of string.
+    elseif custScale = 0
+      LabelKnobs {VeloNote Custom Minor Melodic +Descending}
+      
+    elseif custScale = 1
+      LabelKnobs {VeloNote Custom Hirajoshi Iwato In}
+      
+    else
+      LabelKnobs {VeloNote Custom Scale }, (custScale+1)
+      
+    endif
+    
+  endif
+  
+@End
+
+// Temporarily labels the knobs title with the name of the root note.
+@MyLabelKnobsRootNote
+  if knobRootNote >= 0
+    if valueRootNote = 127
+      LabelKnobs {VeloNote Scale Root = NoteMin}
+    else
+      LabelKnobs {VeloNote Scale Root }, valueRootNote, { }, (NoteName valueRootNote, (valueRootNote > 11))
+    endif
+  endif
+  
+@End
+
+// Generates an array of scale notes based on NoteScale, RootNote, NoteMin, NoteMax.
+// This array includes of every note included between NoteMin and NoteMax.
+// lengthScale is set to amount of notes in array.
+// lengthScale will be zero for chromatic, since array is not needed (every note included).
+// Scale is not used when both NoteMin and NoteMax are zero (input note being output).
+@MyGenerateScale
+  lengthScale = 0 // reset to 0, if not positive then not using scaleNotes array
+  sizeScale = 0 // indicates the amount of notes in scale array before pattern repeats
+  lengthDesc = 0 // if positive, then custom descending scale in descNotes
+  sizeDesc = 0 // positive amount of notes in descending scale before it repeats (should be sizeScale or 0)
+  descStart = 0 // position in custom scale of descending scale hops
+  noteMaxPlus = -1 // not yet determined or when using input note
+  hasMaxPlus = false // true when noteMaxPlus is set greater than max note in scale/range
+  prevNoteIndex = -1 // previous custom scale note index, if any. if curr < prev, use descNotes, if any.
+  
+  scaleOffset = -1 // not a custom scale
+  descOffset = -1 // without a descending scale
+  if custScale >= 0 // 0 based reference to custom scales
+    scaleOffset = custScale * maxScaleVals
+    if scales[scaleOffset] <= 0 // unless it is an empty scale
+      Log {Scale +}, custScale, { treating as Chromatic, first entry <= 0 : [}, scaleOffset, {]=}, scales[scaleOffset]
+      scaleOffset = -1 // signal to treat as chromatic for empty scale
+    endif
+  endif
+  
+  if (noteMin = 0 and noteMax = 0)
+    // no scale, using input note
+    PresetScale 0 // default is chromatic, every note and not using scaleNotes array
+    scaleOffset = -1 // not a custom scale
+    if noteScale > 0
+      Log {Scale Ignored, Note Min/Max=0, Using Input Notes}
+    endif
+    
+  elseif noteScale = 0 or (noteScale > maxMozaicScale and scaleOffset < 0) // also empty custom is chromatic
+    if noteScale = 0
+      Log {Scale Chromatic : all notes in range}
+    endif
+    PresetScale 0 // default is chromatic, every note and not using scaleNotes array
+    scaleOffset = -1 // not a custom scale
+    noteMaxPlus = noteMax
+    if veloMax < 127 and noteMax < 127
+      noteMaxPlus = noteMax + 1 // for over top velocity to +1 note mapping
+      hasMaxPlus = true
+    endif
+    
+  else // create scaleNotes array
+    if valueRootNote = 127
+      rootNote = noteMin
+    else
+      rootNote = valueRootNote
+    endif
+    
+    if noteScale <= maxMozaicScale
+      rootNote = rootNote % 12
+      PresetScale noteScale
+      SetRootNote rootNote
+      Log {Scale }, (ScaleName noteScale), { Root }, rootNote, { }, (NoteName rootNote)
+      
+      // create scaleNotes array, used for velocity mapping and randomization
+      // loop through semi-tones starting at noteMin
+      // stop at first tone past noteMax (for high velocity mapping)
+      scaleNote = noteMin
+      nextIndex = 0
+      scaleMax = noteMax
+      repeat
+        if (InScale scaleNote)
+          noteMaxPlus = scaleNote
+          if scaleNote > scaleMax
+            hasMaxPlus = true
+            scaleNote = 128 // break loop
+          else
+            if lengthScale=0 and scaleNote > noteMin and noteMax < 127
+              // auto-adjust note range based on first included note found
+              scaleMax = noteMax + (scaleNote - noteMin)
+              if scaleMax > 127
+                scaleMax = 127
+              endif
+              Log {Adjust scale note range : }, scaleNote, { }, (NoteName scaleNote, true), { to }, scaleMax, { }, (NoteName scaleMax, true)
+            endif
+            scaleNotes[lengthScale] = scaleNote
+            if nextIndex < 12 // assume all built-in scales repeat every octave
+              if debug
+                Log {Scale [}, lengthScale, {] = (}, nextIndex, {) }, scaleNote, { }, (NoteName scaleNote, true)
+              endif
+              sizeScale = sizeScale + 1
+            endif
+            lengthScale = lengthScale + 1
+          endif
+        endif
+        scaleNote = scaleNote + 1
+        nextIndex = nextIndex + 1
+      until scaleNote > 127
+      
+      // if no notes are in scale, force to be only noteMaxPlus (or noteMin)
+      if noteMaxPlus < 0
+        noteMaxPlus = noteMin
+      endif
+      if lengthScale = 0
+        scaleNotes[0] = noteMaxPlus
+        lengthScale = 1
+        sizeScale = 1
+        hasMaxPlus = false
+      endif
+    
+    else // > maxMozaicScale, custScale >= 0, use custScale and scales
+      PresetScale 0 // default preset is chromatic when not using preset scale (to be consistent)
+      
+      // determine sizeScale entries and descStart position and sizeDesc of descending scale if any
+      nextIndex = 0 // next scale index to consider
+      totalHops = 0 // total to validate descending scale data in @MySetCustomScales
+      descHops = 0
+      repeat
+        hops = scales[scaleOffset + nextIndex] // semi-tones to add to previous note
+        if descStart <= 0 // not yet in descending scale
+          if hops < 0 // found descending entry, end of ascending entries
+            sizeScale = nextIndex
+            descStart = nextIndex
+            descHops = descHops - hops // subtracting negative to increase
+          elseif hops = 0 // found end of entries before any descending entries
+            sizeScale = nextIndex
+            nextIndex = maxScaleVals // break
+          else
+            totalHops = totalHops + hops // total to compare to any descending scale
+          endif
+        elseif hops = 0 // found end of entries after descending entries
+          sizeDesc = nextIndex - descStart
+          nextIndex = maxScaleVals // break
+        elseif hops < 0 // found next descending entry
+          descHops = descHops - hops // subtracting negative to increase
+        else // erroneously found ascending entry after descending entries
+          Log {Error: Scale +}, custScale, { : ascending [}, nextIndex, {] after descending [}, descStart, {] : ignoring descending}
+          sizeDesc = 0 // give up and ignore descending
+          nextIndex = maxScaleVals // break
+        endif
+        nextIndex = nextIndex + 1
+      until nextIndex >= maxScaleVals
+      // adjust if all values filled with no zero ending
+      if sizeScale <= 0
+        sizeScale = maxScaleVals
+      elseif descStart > 0 and sizeDesc <= 0
+        sizeDesc = maxScaleVals - descStart
+      endif
+      if sizeDesc > 0 and (sizeDesc <> sizeScale or descHops <> totalHops)
+        // behavior is undefined if descending scale is not same amount of tones as ascending
+        Log {Error: Scale +}, custScale, { : descending size }, sizeDesc, {(}, descHops, {) does not match ascending size }, sizeScale, {(}, totalHops, {) : ignoring}
+        sizeDesc = 0
+      endif
+      if sizeDesc > 0
+        descOffset = (scaleOffset + descStart + sizeDesc) - 1 // position of descending scale in reverse
+        Log {Scale +}, custScale, { Root }, rootNote, { }, (NoteName rootNote, (valueRootNote > 11)), {, Size }, sizeScale, {, Offset }, scaleOffset, {, sizeDesc }, sizeDesc, {, descStart }, descStart, {, descOffset }, descOffset
+      else
+        Log {Scale +}, custScale, { Root }, rootNote, { }, (NoteName rootNote, (valueRootNote > 11)), {, Size }, sizeScale, {, Offset }, scaleOffset
+      endif
+      
+      // find beginning by walking backwards
+      scaleNote = rootNote
+      descNote = rootNote
+      scaleIndex = 0
+      descIndex = 0
+      nextNote = scaleNote
+      nextDescNote = scaleNote
+      nextIndex = sizeScale
+      nextDescIndex = sizeDesc
+      while nextNote > noteMin and nextDescNote > noteMin
+        nextIndex = nextIndex - 1
+        if nextIndex < 0
+          nextIndex = sizeScale - 1
+        endif
+        if sizeDesc > 0
+          nextDescIndex = nextDescIndex - 1
+          if nextDescIndex < 0
+            nextDescIndex = sizeDesc - 1
+          endif
+        endif
+        hops = Abs scales[scaleOffset + nextIndex]
+        nextNote = nextNote - hops
+        if sizeDesc > 0
+          hops = Abs scales[descOffset - nextDescIndex] // descending scale is reversed
+          nextDescNote = nextDescNote - hops
+        else
+          nextDescNote = nextNote
+        endif
+        if nextNote >= noteMin and nextDescNote >= noteMin
+          scaleNote = nextNote
+          descNote = nextDescNote
+          scaleIndex = nextIndex
+          descIndex = nextDescIndex
+        endif
+      endwhile
+      
+      // walk forward, then add notes when >= noteMin
+      scaleMax = noteMax
+      repeat
+        if scaleNote >= noteMin and descNote >= noteMin
+          noteMaxPlus = scaleNote
+          if scaleNote > scaleMax or descNote > scaleMax
+            hasMaxPlus = true
+            scaleNote = 128 // break loop
+          else
+            if lengthScale=0 and scaleNote > noteMin and noteMax < 127
+              // auto-adjust note range based on first included note found
+              scaleMax = noteMax + (scaleNote - noteMin)
+              if scaleMax > 127
+                scaleMax = 127
+              endif
+              Log {Adjust scale note range : }, scaleNote, { }, (NoteName scaleNote, true), { to }, scaleMax, { }, (NoteName scaleMax, true)
+            endif
+            scaleNotes[lengthScale] = scaleNote
+            if sizeDesc > 0
+              descNotes[lengthDesc] = descNote
+              if debug and lengthScale <= sizeScale
+                Log {Scale [}, lengthScale, {] = (}, nextIndex, {) }, scaleNote, { }, (NoteName scaleNote, true), { descending (}, nextDescIndex, {) }, descNote, { }, (NoteName descNote, true)
+              endif
+              lengthDesc = lengthDesc + 1
+            else
+              if debug and lengthScale <= sizeScale
+                Log {Scale [}, lengthScale, {] = (}, nextIndex, {) }, scaleNote, { }, (NoteName scaleNote, true)
+              endif
+            endif
+            lengthScale = lengthScale + 1
+          endif
+        endif
+        if scaleNote < 128 and descNote < 128 // noteMaxPlus not yet found
+          hops = Abs scales[scaleOffset + scaleIndex]
+          scaleNote = scaleNote + hops
+          nextIndex = scaleIndex // for logging
+          scaleIndex = scaleIndex + 1
+          if scaleIndex >= sizeScale
+            scaleIndex = 0
+          endif
+          if sizeDesc > 0
+            hops = Abs scales[descOffset - descIndex]
+            descNote = descNote + hops
+            nextDescIndex = descIndex // for logging
+            descIndex = descIndex + 1
+            if descIndex >= sizeDesc
+              descIndex = 0
+            endif
+          else
+            descNote = scaleNote
+          endif
+        endif
+      until scaleNote > 127 or descNote > 127 // or noteMaxPlus found
+      
+      // if no notes are in scale, force to be only noteMaxPlus (or noteMin)
+      if noteMaxPlus < 0
+        noteMaxPlus = noteMin
+      endif
+      if lengthScale = 0 
+        scaleNotes[0] = noteMaxPlus
+        lengthScale = 1
+        lengthDesc = 0
+        hasMaxPlus = false
+      endif
+      
+    endif
+    
+  endif
+  if lengthScale > 0
+    if hasMaxPlus
+      maxScaleIndex = lengthScale // converted to noteMaxPlus
+    else
+      maxScaleIndex = lengthScale - 1 // may be 0 if oddly configured to a single note
+    endif
+  else
+    maxScaleIndex = -1 // so >=0 indicates using scale
+  endif
+  
+@End
+
+// Sets inChannel (0 to 16) based on the value of the related knob.
+// 0 means all channels handled.
+@MySetInChan
+  if knobInChan >= 0
+    valueInChan = Round GetKnobValue knobInChan
+    inChannel = RoundDown (( valueInChan * 17 ) / 128) // 0 to 16
+  endif
+  call @MyLabelInChan
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelInChan
+  if knobInChan >= 0
+    LabelKnob knobInChan, {InCh }, inChannel
+  endif
+  
+@End
+
+// Sets outChannel (0 to 16) based on the value of the related knob.
+// 0 means output to same channel as received input.
+@MySetOutChan
+  if knobOutChan >= 0
+    valueOutChan = Round GetKnobValue knobOutChan
+    outChannel = RoundDown (( valueOutChan * 17 ) / 128) // 0 to 16
+  endif
+  call @MyLabelOutChan
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelOutChan
+  if knobOutChan >= 0
+    LabelKnob knobOutChan, {OutCh }, outChannel
+  endif
+  
+@End
+
+// Labels the Knobs with the recently selected channel mapping
+@MyLabelChan
+  if inChannel=0
+    if outChannel=0
+      LabelKnobs {VeloNote Chan All-->Same}
+    else
+      LabelKnobs {VeloNote Chan All-->}, outChannel
+    endif
+  elseif outChannel=0
+    LabelKnobs {VeloNote Chan }, inChannel, {-->Same}
+  else
+    LabelKnobs {VeloNote Chan }, inChannel, {-->}, outChannel
+  endif
+  
+@End
+
+// Sets sustain, noteContinue based on the value of the related knob.
+// 0 = No Sustain behavior (no need for continue)
+// 1 to 8 is amount of notes to hold systain (1 holds until next note)
+// When set, SendOff is a timeout which stops the sustain early. 0 SendOff treated as max timeout.
+// noteContinue = 0 to re-send a received note being sustained, 1 to continue the sustain.
+// Continue is preferred if receiving synth holds note and repeated attack is not needed.
+@MySetSustain
+  if knobSustain >= 0
+    valueSustain = Round GetKnobValue knobSustain
+    if valueSustain = 0 // none
+      valueSustainDiv = 0
+      sustain = 0
+      sustainContinue = 0
+    else
+      valueSustainDiv = 2 + RoundDown (valueSustain / 8)
+      sustain = RoundDown(valueSustainDiv / 2)
+      sustainContinue = valueSustainDiv % 2
+    endif
+  endif
+  call @MyLabelSustain
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelSustain
+  if knobSustain >= 0
+    if sustain = 0
+      LabelKnob knobSustain, {Sus None}
+    elseif sustainContinue = 0
+      LabelKnob knobSustain, {Sus }, sustain
+    else
+      LabelKnob knobSustain, {Sus }, sustain, {+C}
+    endif
+  endif
+  
+@End
+
+// Sets the randomization settings from XY (or knobs if indicated).
+// This is not intended for musical humanization, but just random fun.
+// RandOffset : Random semi-tone offset, 1 picks -1, 0, 1. 0 is none, 127 is special behavior
+// RandGroup : Group Notes (12 semi-tones is octave), random within group with rollover
+// For any random setting except 127,127: 
+//   output velocity is random OutVeloMin to OutVeloMax
+//   unless OutVeloMin <= InVeloMin (0) and OutVeloMax >= InVeloMax (127)
+//   in which case output velocity is exactly the input velocity.
+// Special RandOffset,RandGroup settings:
+// 0,0 = Random Off (not random)
+// 127,127 = Random All Input before conversion, override velocity with random InVeloMin to InVeloMax+1.
+// 127,0 = Random All Output+1, from NoteMin to NoteMax+1
+// 0,127 = Random All Output, from NoteMin to NoteMax (excludes NoteMax+1)
+// x,0 where 0>x>127 = Random Offset +-x without rollover past NoteMin or NoteMax+1
+// x,127 where 0>x>127 = Random Offset +-x Rollover past NoteMin or NoteMax+1
+// For the rest, when RandGroup (y) is 1, 
+//   it will instead be the amount of notes in scale (excluding the second root),
+//   1 will be treated as 12 for harmonic scale 0.
+// 0,y where 0>y>127 and y < noteMax-noteMin+1 = Random Group of y, same position in group (up to NoteMax+1)
+// 0,y where 0>y>127 and y >= noteMax-noteMin+1 = Random NoteMin to NoteMax (excludes NoteMax+1)
+// 127,y where 0>y>127 = Random in Group of y, random note within the same group (up to NoteMax+1)
+// The Random settings are not used when both NoteMin and NoteMax are zero (input note being output).
+@MySetRandom
+  if knobRandOffset = knobX and knobRandGroup = knobY
+    valueRandOffset = Round GetXValue
+    valueRandGroup = Round GetYValue
+    call @MyLabelRandom
+  elseif knobRandOffset >= 0 and knobRandGroup >= 0
+    // knob usage for random config is experimental, since I test using XY
+    valueRandOffset = Round GetKnobValue knobRandOffset
+    valueRandGroup = Round GetKnobValue knobRandGroup
+    call @MyLabelRandOffset
+    call @MyLabelRandGroup
+  endif
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelRandOffset
+  if knobRandOffset >= 0 
+    // knob usage for random config is experimental, since I test using XY
+    LabelKnob knobRandOffset, {rnOfs }, valueRandOffset
+  endif
+  
+@End
+
+// Labels the indicated Knob showing the current mapped value.
+@MyLabelRandGroup
+  if knobRandGroup >= 0
+    // knob usage for random config is experimental, since I test using XY
+    LabelKnob knobRandGroup, {rnGrp }, valueRandGroup
+  endif
+  
+@End
+
+// Labels the XY area (or knobs if used instead of XY)
+// with the recently selected randomization settings.
+// See @MySetRandom.
+@MyLabelRandom
+  if valueRandOffset=0 and valueRandGroup=0
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      LabelXY {Random Off}
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      LabelKnobs {Random Off}
+    endif
+  elseif valueRandOffset=127 and valueRandGroup=127
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      LabelXY {Random All Input}
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      LabelKnobs {Random All Input}
+    endif
+  elseif valueRandOffset=127 and valueRandGroup=0
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      LabelXY {Random All Output+1}
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      LabelKnobs {Random All Output+1}
+    endif
+  elseif valueRandOffset=0 and valueRandGroup=127
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      LabelXY {Random All Output}
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      LabelKnobs {Random All Output}
+    endif
+  elseif valueRandGroup=0
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      LabelXY {Random +-}, valueRandOffset
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      LabelKnobs {Random +-}, valueRandOffset
+    endif
+  elseif valueRandGroup=127
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      LabelXY {Random +-}, valueRandOffset, { Rollover}
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      LabelKnobs {Random +-}, valueRandOffset, { Rollover}
+    endif
+  elseif valueRandOffset=0
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      if valueRandGroup = 1
+        LabelXY {Random Group of Scale}
+      else
+        LabelXY {Random Group of }, valueRandGroup
+      endif
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      if valueRandGroup = 1
+        LabelKnobs {Random Group of Scale}
+      else
+        LabelKnobs {Random Group of }, valueRandGroup
+      endif
+    endif
+  elseif valueRandOffset=127
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      if valueRandGroup = 1
+        LabelXY {Random in Group of Scale}
+      else
+        LabelXY {Random in Group of }, valueRandGroup
+      endif
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      if valueRandGroup = 1
+        LabelKnobs {Random in Group of Scale}
+      else
+        LabelKnobs {Random in Group of }, valueRandGroup
+      endif
+    endif
+  else
+    if knobRandOffset = knobX and knobRandGroup = knobY
+      if valueRandGroup = 1
+        LabelXY {Random +-}, valueRandOffset, { in Group of Scale}
+      else
+        LabelXY {Random +-}, valueRandOffset, { in Group of }, valueRandGroup
+      endif
+    elseif knobRandOffset >= 0 and knobRandGroup >= 0
+      if valueRandGroup = 1
+        LabelKnobs {Random +-}, valueRandOffset, { in Group of Scale}
+      else
+        LabelKnobs {Random +-}, valueRandOffset, { in Group of }, valueRandGroup
+      endif
+    endif
+  endif
+  
+@End
+
+// Handles MIDI Input NoteOn by mapping velocity to notes (primary behavior of VeloNote)
+// based upon the knob settings.
+// When sendOff is zero (0), also (experimentally) 
+// handles NoteOff to turn off the note last mapped for NoteOn.
+// Only modifies input for configured channel(s).
+// Otherwise midi input is passed through without modification.
+@OnMidiInput
+  sendChan = MIDIChannel + 1 // 1 based channel to match knobs
+  
+  if MIDICommand=0x90 and (inChannel=0 or inChannel=sendChan)
+    // note on sent to listening channel
+    
+    if valueRandOffset = 127 and valueRandGroup = 127
+      // RandOffset, RandGroup = 127,127 :
+      // Random All Input before conversion
+      // override velocity with random InVeloMin to InVeloMax+1.
+      randHigh = veloMax + 1 // includes +1 high in random
+      if randHigh > 127
+        randHigh = 127 // 127 is max high
+      endif
+      inVelo = Random veloMin, randHigh // includes +1 high in random
+      if debug
+        Log {Random Input Velocity }, inVelo, { from }, veloMin, { to }, randHigh
+      endif
+    else
+      inVelo = MIDIVelocity
+    endif
+    
+    if inVelo >= veloMin // within velocity minimum (others are ignored)
+      if inVelo > veloMax // if over velocity max, track that but set to max
+        inVelo = veloMax
+        if hasMaxPlus
+          isOverVeloMax = true // add 1 note past max if over and supported
+        endif
+      else
+        isOverVeloMax = false
+      endif
+      
+      outVelo = outVeloMax // output velocity defaults to maximum knob setting
+      
+      // determine amount of notes to output
+      veloCount = (veloMax - veloMin) + 1 // inclusive count of velocities mapped
+      if noteMin = 0 and noteMax = 0 // output note same as input
+        noteOut = MIDINote
+        noteCount = 0 // 0 count to signal not changing note
+        outVelo = inVelo // also default velocity to input rather than outVeloMax
+        valueCount = veloCount // valueCount used when generalizing such as for random settings
+      elseif lengthScale > 0 // using the scaleNotes array
+        noteCount = lengthScale // noteCount is amount in array (lengthScale excludes noteMaxPlus)
+        valueCount = noteCount
+      else
+        noteCount = (noteMax - noteMin) + 1 // noteCount is noteMin to noteMax
+        valueCount = noteCount
+      endif
+      noteIndex = -1 // eventually indicates any custom scale index determined
+      
+      // for random settings
+      // determine random velocity when using input note (not mapping notes)
+      // else determine random in scaleNotes array when using a scale
+      // or random across min/max notes when using chromatic (all tones)
+      valueRandScale = valueRandGroup
+      if valueRandScale = 1 and noteCount > 0 and sizeScale > 1
+        valueRandScale = sizeScale
+      endif
+      if (valueRandOffset = 127 and valueRandGroup = 0) or (valueRandOffset = 0 and (valueRandGroup = 127 or valueRandScale >= valueCount))
+        // RandOffset, RandGroup :
+        // 127,0 = Random All Output+1, from NoteMin to NoteMax+1
+        // 0,127 = Random All Output, from NoteMin to NoteMax (excludes NoteMax+1)
+        // 0,y where 0>y>127: and y >= noteMax-noteMin+1 = Random NoteMin to NoteMax
+        if noteCount = 0 // output note same as input
+          outVelo = Random veloMin, veloMax // random velocity instead
+          if debug
+            Log {Random Output Velocity }, outVelo, { from }, veloMin, { to }, veloMax
+          endif
+          
+        elseif lengthScale <= 0 // random chromatic, not using scaleNotes
+          if valueRandOffset = 127 and hasMaxPlus
+            randHigh = noteMaxPlus // include noteMaxPlus
+          else
+            randHigh = noteMax // exclude noteMaxPlus
+          endif
+          noteOut = Random noteMin, randHigh
+          if debug
+            Log {Random Output Note }, noteOut, { from }, noteMin, { to }, randHigh
+          endif
+          
+        else // random note in scale
+          if valueRandOffset = 127 and hasMaxPlus
+            randHigh = noteCount // include noteMaxPlus
+          else
+            randHigh = noteCount - 1 // exclude noteMaxPlus
+          endif
+          noteIndex = Random 0, randHigh
+          if debug
+            Log {Random Scaled Entry [}, noteIndex, {] from 0 to }, randHigh
+          endif
+        endif
+        
+      else // velonote proportional mapping of velocity to note
+        // determine note to use when overriding note
+        if noteCount > 0 // overriding note based on velocity
+          if isOverVeloMax // past end note if over max velocity
+            noteOut = noteMaxPlus
+            if lengthScale > 0 // using the scaleNotes array
+              noteIndex = maxScaleIndex // maxnoteplus is past array end
+            endif
+          else
+            veloRoot = inVelo - veloMin
+            noteIndex = RoundDown ( ( veloRoot * noteCount ) / veloCount )
+            if lengthScale <= 0 // chromatic, not using scaleNotes
+              noteOut = noteMin + noteIndex
+              if noteOut > noteMax // should not happen here
+                noteOut = noteMaxPlus
+              endif
+            endif
+          endif
+          
+        endif
+        
+        // for random settings based upon note mapped from velocity
+        // determine random velocity when using input note (not mapping notes)
+        // else determine random in scaleNotes array when using a scale
+        // or random across min/max notes when using chromatic (all tones)
+        if (valueRandOffset > 0 or valueRandGroup > 0) and (valueRandOffset < 127 or valueRandGroup < 127)
+          // apply any configured random behavior
+          
+          if (valueRandGroup = 0 or valueRandGroup = 127) and valueRandOffset > 0 and valueRandOffset < 127
+            // x,0 where 0>x>127 = Random Offset +-x without rollover past NoteMin or NoteMax+1
+            // x,127 where 0>x>127 = Random Offset +-x Rollover past NoteMin or NoteMax+1
+            
+            offset = Random (-valueRandOffset), valueRandOffset
+            if noteCount = 0 // same note, randomizing velocity
+              outVelo = outVelo + offset
+              if debug
+                Log {Random Output Velocity Offset }, offset, { to }, outVelo, { within +/- }, valueRandOffset
+              endif
+            elseif lengthScale > 0 // overriding, mapping velocity to scaleNotes array
+              noteIndex = noteIndex + offset // add offset to noteIndex and redetermine
+              if debug
+                Log {Random Scaled Entry Offset }, offset, { to [}, noteIndex, {] within +/- }, valueRandOffset
+              endif
+            else // overriding, mapping velocity to chromatic
+              noteOut = noteOut + offset
+              if debug
+                Log {Random Output Note Offset }, offset, { to }, noteOut, { within +/- }, valueRandOffset
+              endif
+            endif
+            
+            // check for offset past min/max 
+            // with different rollover behavior for valueRandGroup 127 vs 0
+            if valueRandGroup = 0 // no rollover past NoteMin or NoteMax+1
+              if noteCount = 0 // same note, randomizing velocity
+                if outVelo < veloMin
+                  outVelo = veloMin
+                elseif outVelo > veloMax
+                  outVelo = veloMax
+                endif
+              elseif lengthScale > 0 // overriding, mapping velocity to scaleNotes array
+                if noteIndex < 0
+                  noteIndex = 0
+                elseif noteIndex > maxScaleIndex
+                  noteIndex = maxScaleIndex
+                endif
+              else // overriding, mapping velocity to chromatic
+                if noteOut < noteMin
+                  noteOut = noteMin
+                elseif noteOut > noteMaxPlus
+                  noteOut = noteMaxPlus
+                endif
+              endif
+              
+            else // valueRandGroup = 127, Rollover past NoteMin or NoteMax+1
+              if noteCount = 0 // same note, randomizing velocity
+                while outVelo < veloMin
+                  outVelo = veloMax - ((veloMin - outVelo) - 1) // veloMax and downward
+                endwhile
+                while outVelo > veloMax
+                  outVelo = veloMin + ((outVelo - veloMax) - 1) // veloMin and upward
+                endwhile
+                
+              elseif lengthScale > 0 // overriding, mapping velocity to scaleNotes array
+                while noteIndex < 0
+                  noteIndex = maxScaleIndex + noteIndex + 1 // maxScaleIndex and down
+                endwhile
+                while noteIndex > maxScaleIndex
+                  noteIndex = (noteIndex - maxScaleIndex) - 1  // 0 index and up
+                endwhile
+                // noteOut set later
+                
+              else // overriding, mapping velocity to chromatic
+                while noteOut < noteMin
+                  noteOut = noteMaxPlus - ((noteMin - noteOut) - 1) // noteMaxPlus and downward
+                endwhile
+                while noteOut > noteMaxPlus
+                  noteOut = noteMin + ((noteOut - noteMaxPlus) - 1) // noteMin and upward
+                endwhile
+              endif
+              
+            endif
+            if debug
+              // log after adjusting for min/max and rollover
+              if noteCount = 0 // same note, randomizing velocity
+                Log {Random Output Velocity Offset }, offset, { to }, outVelo, { within +/- }, valueRandOffset
+              elseif lengthScale > 0 // overriding, mapping velocity to scaleNotes array
+                Log {Random Scaled Entry Offset }, offset, { to [}, noteIndex, {] within +/- }, valueRandOffset
+              else // overriding, mapping velocity to chromatic
+                Log {Random Output Note Offset }, offset, { to }, noteOut, { within +/- }, valueRandOffset
+              endif
+            endif
+            
+          elseif valueRandOffset = 127 and valueRandGroup > 0 and valueRandGroup < 127
+            // 127,y where 0>y>127 = Random in Group of y
+            // random note within the same group (up to NoteMax+1)
+            
+            if noteCount = 0 // same note, randomizing velocity
+              // mimics grouping behavior for notes, but maybe not useful
+              veloGroup = RoundDown ((outVelo - veloMin) / valueRandScale)
+              randLow = veloMin + (veloGroup * valueRandScale)
+              randHigh = (randLow + valueRandScale) - 1
+              if randHigh > veloMax
+                randHigh = veloMax
+              endif
+              outVelo = Random randLow, randHigh
+              if debug
+                Log {Random Output Velocity }, outVelo, { from }, randLow, { to }, randHigh, { of group }, veloGroup, { *}, valueRandScale
+              endif
+              
+            elseif lengthScale > 0 // overriding, mapping velocity to scaleNotes array
+              noteGroup = RoundDown (noteIndex / valueRandScale)
+              randLow = noteGroup * valueRandScale
+              randHigh = (randLow + valueRandScale) - 1
+              if randHigh > maxScaleIndex
+                randHigh = maxScaleIndex // noteMaxPlus
+              endif
+              noteIndex = Random randLow, randHigh
+              if debug
+                Log {Random Scaled Entry [}, noteIndex, {] from }, randLow, { to }, randHigh, { of group }, noteGroup, { *}, valueRandScale
+              endif
+              // noteOut set later
+              
+            else // overriding, mapping velocity to chromatic
+              noteGroup = RoundDown ((noteOut - noteMin) / valueRandScale)
+              randLow = noteMin + (noteGroup * valueRandScale)
+              randHigh = (randLow + valueRandScale) - 1
+              if randHigh > noteMaxPlus
+                randHigh = noteMaxPlus
+              endif
+              noteOut = Random randLow, randHigh
+              if debug
+                Log {Random Output Note }, noteOut, { from }, randLow, { to }, randHigh, { of group }, noteGroup, { *}, valueRandScale
+              endif
+              
+            endif
+            
+          elseif valueRandOffset = 0 and valueRandGroup > 0 and valueRandGroup < 127
+            // 0,y where 0>y>127:
+            if valueRandScale < valueCount
+              // and y < noteMax-noteMin+1 = Random Group of y
+              if noteCount = 0 // same note, randomizing velocity
+                // mimics grouping behavior for notes, but maybe not useful
+                veloGroup = RoundDown (((Random veloMin, veloMax) - veloMin) / valueRandScale)
+                outVelo = veloMin + (veloGroup * valueRandScale) + ((outVelo - veloMin) % valueRandScale)
+                if outVelo > veloMax
+                  outVelo = veloMax
+                endif
+                if debug
+                  Log {Random Output Velocity }, outVelo, { in random group }, veloGroup, { *}, valueRandScale
+                endif
+                
+              // else, note based on same position in group (up to NoteMax+1)
+              // to preserve random distribution, pick group from a random note
+              // if the group size >= amount of notes, this has no impact
+              elseif lengthScale > 0 // overriding, mapping velocity to scaleNotes array
+                noteGroup = RoundDown ((Random 0, (noteCount-1)) / valueRandScale)
+                noteIndex = (noteGroup * valueRandScale) + (noteIndex % valueRandScale)
+                if debug
+                  Log {Random Scaled Entry [}, noteIndex, {] in random group }, noteGroup, { *}, valueRandScale
+                endif
+                // noteOut set later
+                
+              else // overriding, mapping velocity to chromatic
+                noteGroup = RoundDown ((Random 0, (noteCount-1)) / valueRandScale)
+                noteOut = noteMin + (noteGroup * valueRandScale) + ((noteOut - noteMin) % valueRandScale)
+                if noteOut > noteMaxPlus
+                  noteOut = noteMaxPlus
+                endif
+                if debug
+                  Log {Random Output Note }, noteOut, { in random group }, noteGroup, { *}, valueRandScale
+                endif
+              endif
+              
+            endif
+            // else already handled earlier
+          
+          else 
+            // 0>RandOffset>127, 0>RandGroup>127 : random within group with rollover
+            // RandOffset : Random semi-tone offset, 1 picks -1, 0, 1.
+            // RandGroup : Group Notes (12 semi-tones is octave)
+            
+            if noteCount = 0 // same note, randomizing velocity
+              // mimics grouping behavior for notes, but maybe not useful
+              veloGroup = RoundDown ((outVelo - veloMin) / valueRandScale)
+              offset = Random (-valueRandOffset), valueRandOffset
+              outVelo = outVelo + offset
+              randLow = veloMin + (veloGroup * valueRandScale)
+              randHigh = (randLow + valueRandScale) - 1
+              if randHigh > veloMax
+                randHigh = veloMax
+              endif
+              while outVelo < randLow
+                outVelo = randHigh - ((randLow - outVelo) - 1) // randHigh and downward
+              endwhile
+              while outVelo > randHigh
+                outVelo = randLow + ((outVelo - randHigh) - 1) // randLow and upward
+              endwhile
+              if debug
+                Log {Random Output Velocity Offset }, offset, { to }, outVelo, { within +/- }, valueRandOffset, { from }, randLow, { to }, randHigh, { of group }, veloGroup, { *}, valueRandScale
+              endif
+              
+            elseif lengthScale > 0 // overriding, mapping velocity to scaleNotes array
+              noteGroup = RoundDown (noteIndex / valueRandScale)
+              offset = Random (-valueRandOffset), valueRandOffset
+              noteIndex = noteIndex + offset
+              randLow = (noteGroup * valueRandScale)
+              randHigh = (randLow + valueRandScale) - 1
+              if randHigh > maxScaleIndex
+                randHigh = maxScaleIndex
+              endif
+              while noteIndex < randLow
+                noteIndex = randHigh - ((randLow - noteIndex) - 1) // randHigh and downward
+              endwhile
+              while noteIndex > randHigh
+                noteIndex = randLow + ((noteIndex - randHigh) - 1) // randLow and upward
+              endwhile
+              if debug
+                Log {Random Scaled Entry Offset }, offset, { to [}, noteIndex, {] within +/- }, valueRandOffset, { from }, randLow, { to }, randHigh, { of group }, noteGroup, { *}, valueRandScale
+              endif
+              // noteOut set later
+              
+            else // overriding, mapping velocity to chromatic
+              noteGroup = RoundDown ((noteOut - noteMin) / valueRandScale)
+              offset = Random (-valueRandOffset), valueRandOffset
+              noteOut = noteOut + offset
+              randLow = noteMin + (noteGroup * valueRandScale)
+              randHigh = (randLow + valueRandScale) - 1
+              if randHigh > noteMaxPlus
+                randHigh = noteMaxPlus
+              endif
+              while noteOut < randLow
+                noteOut = randHigh - ((randLow - noteOut) - 1) // randHigh and downward
+              endwhile
+              while noteOut > randHigh
+                noteOut = randLow + ((noteOut - randHigh) - 1) // randLow and upward
+              endwhile
+              if debug
+                Log {Random Output Note Offset }, offset, { to }, noteOut, { within +/- }, valueRandOffset, { from }, randLow, { to }, randHigh, { of group }, noteGroup, { *}, valueRandScale
+              endif
+            endif
+            
+          endif
+          
+        endif
+        
+      endif
+      
+      if lengthScale > 0 // mapping to scaleNotes array
+        if noteIndex < lengthScale // validate index in array
+          if noteIndex < 0
+            noteIndex = 0
+          endif
+          if noteIndex >= prevNoteIndex or noteIndex >= lengthDesc
+            noteOut = scaleNotes[noteIndex]
+            if debug
+              Log {Scale [}, noteIndex, {] = }, noteOut, { }, (NoteName noteOut, true)
+            endif
+          else
+            noteOut = descNotes[noteIndex]
+            if debug
+              Log {Scale [}, noteIndex, {] < }, noteOut, { }, (NoteName noteOut, true)
+            endif
+          endif
+        else // else rolled into max plus
+          noteOut = noteMaxPlus // guarantee max
+          if debug
+            Log {Scale [}, noteIndex, {] > }, noteOut, { }, (NoteName noteOut, true)
+          endif
+        endif
+      endif
+      
+      // When mapping notes, for any random setting except 127,127: 
+      //   output velocity is random OutVeloMin to OutVeloMax
+      //   unless OutVeloMin <= InVeloMin (0) and OutVeloMax >= InVeloMax (127)
+      //   in which case output velocity is exactly the input velocity.
+      if noteCount > 0 // only when mapping notes
+        if (valueRandOffset > 0 or valueRandGroup > 0) and (valueRandOffset < 127 or valueRandGroup < 127)
+          if outVeloMin <= veloMin and outVeloMax >= veloMax
+            outVelo = MIDIVelocity
+          elseif outVeloMax > outVeloMin
+            outVelo = Random outVeloMin, outVeloMax
+            if debug
+              Log {Random Output Velocity }, outVelo, { from }, outVeloMin, { to }, outVeloMax
+            endif
+          endif
+        elseif outVeloMax > outVeloMin and noteCount < veloCount
+          // output velocity scaled to knobs based on range between note selections
+          // mainly useful for a large amount of input velocites with very small amount of notes
+          // so that output notes get a touch of the velocity between notes
+          outVeloRatio = veloCount / noteCount
+          if outVeloRatio >= 2 // at least 2 velocities to map
+            outVeloIndex = RoundDown ( veloRoot % outVeloRatio )
+            outVeloCount = (outVeloMax - outVeloMin) + 1 // inclusive
+            outVelo = outVeloMin + RoundDown ( ( outVeloIndex * outVeloCount ) / outVeloRatio )
+            if debug
+              Log {Proportional Output Velocity }, outVelo, { _for }, outVeloIndex, { in }, outVeloMin, { to }, outVeloMax
+            endif
+          endif
+        endif
+      endif
+      
+      if outChannel > 0
+        sendChan = outChannel
+      endif
+      
+      call @MyCancelSustain // sets nextSustainOff to -1, or sustainTime of remaining sustaining note
+      
+      if continuedSustain and sendOff > 0 and sustain > 0
+        // don't send the note out again, but do add again to sustainNotes
+      else
+        if debug
+          Log MIDIChannel+1, {:}, MIDINote, {:}, MIDIVelocity, { sends : ch }, sendChan, { : n }, noteOut, { : v }, outVelo, { : nmn }, noteMin, { : nmx }, noteMax, {)}
+        endif
+        SendMIDINoteOn sendChan-1, noteOut, outVelo // 0 based channel
+        prevNoteIndex = noteIndex // track any previous custom index for descending scale handling, if any
+      endif
+        
+      if sendOff > 0 // 0 disables this, set to 0 if device sends note off
+        if sustain > 0 // establish sustain timer for note off
+          sustainNotes[numSustainNotes] = noteOut
+          sustainChans[numSustainNotes] = sendChan
+          sustainVelos[numSustainNotes] = outVelo
+          sustainTimes[numSustainNotes] = SystemTime + sendOff // milliseconds
+          if debug
+            Log {Set Sustain [}, numSustainNotes, {] = ch}, sustainChans[numSustainNotes], {, n}, sustainNotes[numSustainNotes], {, t}, sendOff, {:}, sustainTimes[numSustainNotes]
+          endif
+          numSustainNotes = numSustainNotes + 1
+          if nextSustainOff < 0
+            SetTimerInterval sendOff
+          else
+            nextSustainOff = nextSustainOff - SystemTime
+            if nextSustainOff <= 0
+              nextSustainOff = 1 // just to be non-zero
+            endif
+            SetTimerInterval nextSustainOff
+          endif
+          StartTimer // check to force sustain off when timer ticks
+          
+        else
+          if debug
+            Log { and send off : ch }, sendChan, { : n }, noteOut, { : v }, outVelo, { : d }, sendOff
+          endif
+          SendMIDINoteOff sendChan-1, noteOut, outVelo, sendOff
+        endif
+        
+      else
+        // experimental handling of device that sends note off
+        SetNoteState MIDIChannel, MIDINote, ((noteOut * 128) + outVelo)
+      endif
+      
+    endif
+    
+  elseif MIDICommand=0x80 and sendOff=0 and sustain=0 and (inChannel=0 or inChannel=sendChan)
+    
+    // experimental handling of device that sends note off
+    // NoteOn is being sent to a different channel without enforcing a note off
+    // So also redirect any NoteOff to same channel matching mapped note
+    if outChannel > 0
+      sendChan = outChannel
+    endif
+    noteOff = MIDINote
+    veloOff = MIDIVelocity
+    noteState = GetNoteState MIDIChannel, MIDINote
+    if noteState > 0 // since noteOut and outVelo > 0, this should be as well
+      SetNoteState MIDIChannel, MIDINote, 0 // clear
+      veloOff = noteState % 128
+      noteOff = Round ((noteState - veloOff) / 128)
+    endif
+    
+    if debug
+      Log MIDIChannel+1, {:}, MIDINote, {:}, MIDIVelocity, { send off : ch }, sendChan, { : n }, noteOff, { : v }, veloOff
+    endif
+    SendMIDINoteOff sendChan-1, noteOff, veloOff
+    
+  else
+    
+    if debug
+      if MIDICommand=0x90
+        Log MIDIChannel+1, {:}, MIDINote, {:}, MIDIVelocity, { send on }
+      elseif MIDICommand=0x80
+        Log MIDIChannel+1, {:}, MIDINote, {:}, MIDIVelocity, { send off }
+      else
+        Log MIDICommand, {>}, MIDIChannel+1, {:}, MIDINote, {:}, MIDIVelocity, { thru }
+      endif
+    endif
+    SendMIDIThru
+    
+  endif
+  
+@End 
+
+// Cancels the first sustain in list and removes any expired by timer.
+// nextSustainOff will be set to the first non-zero sustain time found
+// If noteout > 0, any match will be cancelled and/or trigger continue.
+// Any cancelled sustain causes a noteoff unless channel or time already zero (or continuing)
+@MyCancelSustain
+  nextSustainOff = -1 // next timer interval, if any
+  continuedSustain = false // true when sustain continued
+  if numSustainNotes > 0 // handle sustain previous note off prior to sending next note
+    StopTimer // stop timer, add to sustain as needed, check for continue
+    targetSustainIndex = 0
+    removeSustainIndex = numSustainNotes - sustain // >= loopSustainIndex
+    if debug
+      Log {CancelSustain removeSustainIndex }, removeSustainIndex
+    endif
+    for loopSustainIndex = 0 to (numSustainNotes-1)
+      sustainNote = sustainNotes[loopSustainIndex]
+      sustainChan = sustainChans[loopSustainIndex]
+      sustainVelo = sustainVelos[loopSustainIndex]
+      sustainTime = sustainTimes[loopSustainIndex]
+      if debug
+        logSustainTime = 0
+        if sustainTime > 0
+          logSustainTime = sustainTime - SystemTime
+          if logSustainTime <= 0
+            logSustainTime = 1
+          endif
+        endif
+        Log {CancelSustain Check [}, loopSustainIndex, {] = ch}, sustainChan, {, n}, sustainNote, {, t}, logSustainTime, {:}, sustainTime
+      endif
+      if noteOut > 0 and noteOut = sustainNote and sustainTime > 0 and sustainChan > 0
+        // matches active note being sustained
+        sustainChans[loopSustainIndex] = 0 // mark noteoff sent or continued
+        if sendOff > 0 and sustain > 0 and sustainContinue = 1
+          continuedSustain = true // signal to not send another noteOut
+          if debug
+            Log { dupe sustain continue : ch }, sustainChan, { : n }, sustainNote, { : v }, sustainVelo
+          endif
+        else
+          if debug
+            Log { dupe sustain off : ch }, sustainChan, { : n }, sustainNote, { : v }, sustainVelo
+          endif
+          SendMIDINoteOff sustainChan-1, sustainNote, sustainVelo
+        endif
+        sustainChan = 0 // entry used for sustain count, continuation added to end
+      endif
+      if sustainTime = 0 
+        if debug
+          Log { remove sustain timeout : ch }, sustainChan, { : n }, sustainNote, { : v }, sustainVelo
+        endif
+        // targetSustainIndex not incremented, causing this to be deleted/overwritten
+      elseif removeSustainIndex >= loopSustainIndex 
+        sustainTimes[loopSustainIndex] = 0 // just to be sure
+        if sustainChan > 0 
+          sustainChans[loopSustainIndex] = 0 // just to be sure
+          if debug
+            Log { old sustain off : ch }, sustainChan, { : n }, sustainNote, { : v }, sustainVelo
+          endif
+          SendMIDINoteOff sustainChan-1, sustainNote, sustainVelo
+        endif
+        // targetSustainIndex not incremented, causing this to be deleted/overwritten
+      else // otherwise increment after copying if indicated
+        if targetSustainIndex < loopSustainIndex // copy overwrite to remove from chain
+          sustainNotes[targetSustainIndex] = sustainNote
+          sustainChans[targetSustainIndex] = sustainChan
+          sustainVelos[targetSustainIndex] = sustainVelo
+          sustainTimes[targetSustainIndex] = sustainTime
+        endif
+        if sustainChan > 0 and nextSustainOff < 0
+          nextSustainOff = sustainTime
+        endif
+        targetSustainIndex = targetSustainIndex + 1
+      endif
+    endfor
+    numSustainNotes = targetSustainIndex
+  endif
+
+@End 
+
+// Send Sustain Note Off for anything passed time
+@OnTimer
+  StopTimer
+  if numSustainNotes > 0 // turn off first note and any subsequent passed time
+    nextTimerOff = -1 // next timer interval, if any
+    removeTimerIndex = numSustainNotes - sustain // >= timerSustainIndex
+    if removeTimerIndex < 0
+      removeTimerIndex = 0 // always remove first
+    endif
+    thisTimeOff = SystemTime // milliseconds, consistent compare value during loop
+    for timerSustainIndex = 0 to (numSustainNotes-1)
+      timerNote = sustainNotes[timerSustainIndex]
+      timerChan = sustainChans[timerSustainIndex]
+      timerVelo = sustainVelos[timerSustainIndex]
+      timerTime = sustainTimes[timerSustainIndex]
+      if timerTime <= thisTimeOff
+        if timerTime > 0
+          sustainTimes[timerSustainIndex] = 0
+          if timerChan > 0
+            sustainChans[timerSustainIndex] = 0 // just to be sure
+            if debug
+              Log { timeout sustain off : ch }, timerChan, { : n }, timerNote, { : v }, timerVelo
+            endif
+            SendMIDINoteOff timerChan-1, timerNote, timerVelo
+          endif
+        endif
+      elseif timerTime > 0 and timerChan > 0 and nextTimerOff < 0
+        nextTimerOff = timerTime
+      endif
+    endfor
+    
+    if nextTimerOff >= 0
+      nextTimerOff = nextTimerOff - SystemTime
+      if nextTimerOff < 100
+        nextTimerOff = 100 // minimum to get safely out of this
+      endif
+      SetTimerInterval nextTimerOff
+      StartTimer
+    endif
+  endif
+  
+@End 

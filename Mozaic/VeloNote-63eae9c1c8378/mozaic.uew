@@ -1,0 +1,278 @@
+/L1"Mozaic" Nocase Noquote DisableMLS Line Comment = // File Extensions = MOZ
+/Regexp Type = Perl
+/Delimiters = ! "	%&'()*+,-./:;<=>?[\]^{|}~$#
+# Includes @ when selecting event name
+/Word Select Include = @
+# Mark {strings} since separate begin/end quote characters not supported
+/Marker Characters = "{}"
+# Folds common blocks, but doesn't support regex or functions
+/Open Fold Strings = "if" "elseif" "else" "repeat" "while" "for"
+/Close Fold Strings = "elseif" "else" "endif" "until" "endwhile" "endfor" "@end"
+# Matches typical brace and blocks
+/Open Brace Strings =  "{" "(" "[" "if" "repeat" "while" "for"
+/Close Brace Strings = "}" ")" "]" "endif" "until" "endwhile" "endfor"
+# indent seems to be annoying or broken unless you type exactly in order
+# indent also doesn't support regex or function declarations
+# /Indent Strings = "if" "elseif" "else" "repeat" "while" "for"
+# /Unindent Strings = "elseif" "else" "endif" "until" "endwhile" "endfor" "@end"
+# Populates the Function List with the declared event handlers
+/TGBegin "Events"
+/TGFindStr = "^\s*(@[a-z0-9_]+)(?<!@[eE][nN][dD])\s*$"
+/TGEnd
+# Color string text same as literal numbers
+/C1"Text"
+{}
+/C2"Keywords" Nocase STYLE_KEYWORD
+if elseif else endif
+repeat while for
+until endwhile endfor
+true false
+call
+/C3"Operators" Nocase STYLE_OPERATOR
++
+-
+*
+// /
+%
+&
+|
+^
+=
+<
+>
+not
+and
+or
+/C4"Functions" Nocase STYLE_FUNCTION
+GetAUParameter
+GetLFOValue
+InScale
+ScaleQuantize
+GetXValue
+GetYValue
+GetXYMorphValue
+GetKnobValue
+PadState
+MotionPitch
+MotionRoll
+MotionYaw
+NoteName
+RootNoteName
+ScaleName
+Unassigned
+Round
+RoundUp
+RoundDown
+Random
+Clip
+TranslateCurve
+TranslateScale
+Sin
+Cos
+Tan
+Tanh
+Exp
+Sqrt
+Abs
+Logn
+Log10
+Pow
+Div
+GetNoteState
+SystemTime
+/C5"Commands" Nocase STYLE_COMMAND
+SendMIDIOut
+SendMIDINoteOn
+SendMIDINoteOff
+SendMIDICC
+SendMIDIPitchbend
+SendMIDIProgramChange
+SendMIDIBankSelect
+SendMIDIThru
+SendMIDIThruOnCh
+ConfigureMPE
+SendSysex
+SendSysexThru
+ReceiveSysex
+SetShortName
+SetMetroPPQN
+SetMetroSwing
+SetAUParameter
+StartTimer
+StopTimer
+ResetTimer
+SetTimerInterval
+SetupLFO
+SetLFOType
+ResetLFO
+CustomScale
+PresetScale
+SetRootNote
+Exit
+ShowLayout
+LabelPad
+LabelPads
+LabelKnobs
+LabelXY
+LabelKnob
+SetKnobValue
+ColorPad
+LatchPad
+FlashPad
+FlashUserLed
+SetXYValues
+Log
+LogTime
+FillArray
+CopyArray
+Inc
+Dec
+ResetNoteStates
+SetNoteState
+/C6"Events" Nocase STYLE_EVENT
+@OnAUParameter
+@OnHostStart
+@OnHostStop
+@OnKnobChange
+@OnLoad
+@OnMetroPulse
+@OnMidiCC
+@OnMidiInput
+@OnMidiNote
+@OnMidiNoteOff
+@OnMidiNoteOn
+@OnNewBar
+@OnNewBeat
+@OnPadDown
+@OnPadUp
+@OnPedalDown
+@OnPedalUp
+@OnShiftDown
+@OnShiftUp
+@OnSysex
+@OnTimer
+@OnXYChange
+@Description
+/C7"Variables" Nocase STYLE_VARIABLE
+YES NO
+MIDIChannel
+MIDICommand
+MIDINote
+MIDIVelocity
+MIDIByte1
+MIDIByte2
+MIDIByte3
+MIDISustainPedalDown
+SysexSize
+HostTempo
+HostBar
+HostBeat
+HostBeatsPerMeasure
+HostRunning
+CurrentMetroPulse
+LastAUParameter
+QuarterNote
+LastKnob
+LastPad
+LastPadVelocity
+ShiftPressed
+GLOBAL0
+GLOBAL1
+GLOBAL2
+GLOBAL3
+GLOBAL4
+GLOBAL5
+GLOBAL6
+GLOBAL7
+GLOBAL8
+GLOBAL9
+GLOBAL10
+GLOBAL11
+GLOBAL12
+GLOBAL13
+GLOBAL14
+GLOBAL15
+GLOBAL16
+GLOBAL17
+GLOBAL18
+GLOBAL19
+GLOBAL20
+GLOBAL21
+GLOBAL22
+GLOBAL23
+GLOBAL24
+GLOBAL25
+GLOBAL26
+GLOBAL27
+GLOBAL28
+GLOBAL29
+GLOBAL30
+GLOBAL31
+GLOBAL32
+GLOBAL33
+GLOBAL34
+GLOBAL35
+GLOBAL36
+GLOBAL37
+GLOBAL38
+GLOBAL39
+GLOBAL40
+GLOBAL41
+GLOBAL42
+GLOBAL43
+GLOBAL44
+GLOBAL45
+GLOBAL46
+GLOBAL47
+GLOBAL48
+GLOBAL49
+GLOBAL50
+GLOBAL51
+GLOBAL52
+GLOBAL53
+GLOBAL54
+GLOBAL55
+GLOBAL56
+GLOBAL57
+GLOBAL58
+GLOBAL59
+GLOBAL60
+GLOBAL61
+GLOBAL62
+GLOBAL63
+GLOBAL64
+GLOBAL65
+GLOBAL66
+GLOBAL67
+GLOBAL68
+GLOBAL69
+GLOBAL70
+GLOBAL71
+GLOBAL72
+GLOBAL73
+GLOBAL74
+GLOBAL75
+GLOBAL76
+GLOBAL77
+GLOBAL78
+GLOBAL79
+GLOBAL80
+GLOBAL81
+GLOBAL82
+GLOBAL83
+GLOBAL84
+GLOBAL85
+GLOBAL86
+GLOBAL87
+GLOBAL88
+GLOBAL89
+GLOBAL90
+GLOBAL91
+GLOBAL92
+GLOBAL93
+GLOBAL94
+GLOBAL95
+GLOBAL96
+GLOBAL97
+GLOBAL98
+GLOBAL99
